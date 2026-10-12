@@ -30,7 +30,8 @@ override.tf.json
 .env
 .env.*
 
-# ---- Exporter / discovery output (may contain real identifiers) ----
+# ---- Discovery output (may contain real identifiers) ----
+discovery-output/
 exporter-output/
 generated/
 *.exported.tf

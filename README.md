@@ -154,6 +154,19 @@ databricks grants get <securable_type> <full_name> -p my-workspace -o json
 Map each result into the matching tfvars map. For dozens/hundreds of objects, script
 the JSON → map transformation (`jq` / Python) instead of hand-editing.
 
+**Helper script.** `scripts/discover.sh` runs all of the above (except the one-time
+`metastores summary`) for **each** workspace profile you pass and saves the raw JSON
+under `discovery-output/<profile>/` (gitignored). Running it for every workspace covers
+the binding blind spots described below — an object a workspace can't see is skipped
+and another profile captures it:
+
+```bash
+./scripts/discover.sh ws-east ws-west
+```
+
+It is read-only and captures everything it can see, including `system` / `samples`
+catalogs — exclude those when building the tfvars (§5).
+
 > Why not the Terraform Resource Exporter? It only *generates* per-object HCL and
 > import IDs — both of which this template already provides (static `for_each`
 > resources; import IDs derived from map keys). You would still have to transform its
