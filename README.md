@@ -59,6 +59,9 @@ state.
 ### Assumptions
 - **Metastore admin + workspace-level OAuth** (no account admin required).
 - The target metastore and the workspace you connect to already exist and are assigned.
+- The workspace you point the provider at can access all in-scope catalogs (they are
+  OPEN, or bound to it). Catalogs **isolated to other workspaces** must be imported in
+  a separate run pointed at a workspace they are bound to — see [§6](#6-plan--validate-the-deliverable).
 - Terraform **≥ 1.7**, Databricks provider **≥ 1.59**.
 
 ---
@@ -237,6 +240,15 @@ Plan: N to import, 0 to add, 0 to change, 0 to destroy.
 - **`to change` / `to destroy` must be 0.** Anything else means config ≠ reality — fix
   it in §5 (a `databricks_grants` block that would add/remove a `grant {}` means the
   snapshot is wrong).
+
+**Isolated catalogs & the provider workspace.** `plan` reads every object through the
+single workspace the provider points at, so a catalog (or its schemas/volumes/grants)
+`ISOLATED` to a *different* workspace fails the whole plan with `cannot read catalog:
+Catalog '<name>' is not accessible in current workspace` (verified). Point the provider
+at a workspace that can access the catalog — and for a metastore with isolated catalogs
+spread across workspaces, run the config once per bound workspace (that workspace's
+`databricks_workspace_host` + the matching subset of objects), validating each
+separately.
 
 This validated plan **is** the deliverable: it proves the configuration would adopt
 every object correctly and safely. `terraform plan` writes nothing — it changes
