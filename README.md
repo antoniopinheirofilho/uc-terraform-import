@@ -164,8 +164,8 @@ and another profile captures it:
 ./scripts/discover.sh ws-east ws-west
 ```
 
-It is read-only and captures everything it can see, including `system` / `samples`
-catalogs — exclude those when building the tfvars (§5).
+It is read-only and automatically skips system-managed objects (the `system` /
+`samples` catalogs and the Default-Storage external location).
 
 > Why not the Terraform Resource Exporter? It only *generates* per-object HCL and
 > import IDs — both of which this template already provides (static `for_each`
@@ -174,24 +174,15 @@ catalogs — exclude those when building the tfvars (§5).
 > misses account-level objects and emits system properties, so it was never the source
 > of truth. The API/CLI inventory is.
 
-### Workspace bindings affect what `list` returns
+### Workspace bindings
 
-`list` is **binding-aware**. By default `catalogs`, `external-locations`, and
-`storage-credentials` list only objects that are OPEN or bound to the current
-workspace; add **`--include-unbound`** (metastore admin) to also return `ISOLATED`
-objects bound to *other* workspaces. `get-bindings` returns all bound workspace IDs
-from any workspace.
-
-**Caveat — ISOLATED catalogs.** From an arbitrary workspace you can see an isolated
-catalog's *object* (`catalogs list --include-unbound`) and its *bindings*
-(`get-bindings`) — but **not** its **grants, ownership, schemas, volumes, or tables**.
-`grants get` and `schemas/volumes list` on an isolated catalog (or anything inside it)
-return `Catalog '<name>' is not accessible in current workspace`, even for a metastore
-admin (verified — grants are binding-aware too). So for each isolated catalog, run its
-**grants + schema/volume/table discovery from a workspace it is bound to**, and merge;
-only the top-level securables and bindings come from a single workspace. The same
-applies to isolated external locations / storage credentials. A non-metastore-admin
-sees even less — only what their workspace can access.
+`list` is binding-aware: add `--include-unbound` (metastore admin) to `catalogs` /
+`external-locations` / `storage-credentials` to also return `ISOLATED` objects bound to
+other workspaces. But an isolated catalog's **grants, schemas, volumes, and tables are
+readable only from a workspace it is bound to** — elsewhere they fail with `Catalog not
+accessible in current workspace` (verified; `get-bindings` still works from anywhere).
+So pass every binding workspace to the discovery script — its per-workspace dumps cover
+these blind spots.
 
 Every object must end up either in the tfvars maps or consciously excluded.
 

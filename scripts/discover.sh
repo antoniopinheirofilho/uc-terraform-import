@@ -36,6 +36,17 @@ d=d if isinstance(d,list) else next((v for v in d.values() if isinstance(v,list)
 print(chr(10).join(str(x['$1']) for x in d if isinstance(x,dict) and '$1' in x))"
 }
 
+# exclude <file> <key> <value> : rewrite a JSON-array file dropping entries where key==value.
+exclude() {
+  python3 -I - "$1" "$2" "$3" <<'PY'
+import json, sys
+path, key, val = sys.argv[1], sys.argv[2], sys.argv[3]
+d = json.load(open(path))
+arr = d if isinstance(d, list) else next((v for v in d.values() if isinstance(v, list)), [])
+json.dump([x for x in arr if x.get(key) != val], open(path, "w"), indent=2)
+PY
+}
+
 mkdir -p "$OUT"
 
 # metastore summary — once (identical from any workspace)
@@ -51,6 +62,11 @@ for prof in "$@"; do
   dump "$d/storage_credentials.json" storage-credentials list --include-unbound -p "$prof" && echo "  storage_credentials"
   dump "$d/external_locations.json"  external-locations list --include-unbound -p "$prof"   && echo "  external_locations"
   dump "$d/connections.json"         connections list -p "$prof"                            && echo "  connections"
+
+  # drop system-managed objects we never manage (system + samples catalogs are
+  # catalog_type SYSTEM_CATALOG; the Default-Storage external location is auto-created)
+  [ -f "$d/catalogs.json" ]           && exclude "$d/catalogs.json" catalog_type SYSTEM_CATALOG
+  [ -f "$d/external_locations.json" ] && exclude "$d/external_locations.json" name __databricks_managed_storage_location
 
   # metastore-level grants
   [ -n "$METASTORE_ID" ] && dump "$d/grants/metastore.json" grants get metastore "$METASTORE_ID" -p "$prof"
