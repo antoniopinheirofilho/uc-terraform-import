@@ -42,7 +42,7 @@ state.
   delete) — out of scope. This project stops at a validated `plan`.
 - **The metastore object and workspace assignments** (`databricks_metastore`,
   `databricks_metastore_assignment`) — account-level, assumed to already exist and
-  managed outside Terraform. Add later as an account-admin layer ([§8](#8-adding-the-account-layer-later)).
+  managed outside Terraform.
 - **Tables, views, materialized views, functions, registered models** — data objects
   are not managed (manage their containers + grants instead).
 - **Delta Sharing** shares/recipients/providers, and **system schemas / Lakehouse
@@ -251,30 +251,7 @@ securable so the plan stays a clean no-op.
 
 ---
 
-## 8. Adding the account layer later
-
-The metastore object and workspace assignments are account-level (account admin) and
-out of scope here. To bring them under Terraform later, add a separate root with its
-own state and an account-level provider:
-
-```hcl
-provider "databricks" {
-  host       = "https://accounts.cloud.databricks.com"
-  account_id = var.databricks_account_id
-}
-
-resource "databricks_metastore" "this" { /* name, region, owner; import id = <metastore_id> */ }
-resource "databricks_metastore_assignment" "this" {
-  for_each     = toset(var.assigned_workspace_ids)
-  workspace_id = each.key
-  metastore_id = databricks_metastore.this.id
-  # import id = "<workspace_id>|<metastore_id>"
-}
-```
-
----
-
-## 9. Safety & publishing
+## 8. Safety & publishing
 
 - **Never commit:** state, real `*.tfvars`, `.databrickscfg`, secrets, raw discovery
   output (JSON with real identifiers). `.gitignore` enforces this.
