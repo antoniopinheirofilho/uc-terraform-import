@@ -1,5 +1,4 @@
 resource "databricks_volume" "this" {
-  provider = databricks.workspace
   for_each = local.volumes
 
   catalog_name = each.value.catalog

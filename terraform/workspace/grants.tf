@@ -1,12 +1,11 @@
 # Authoritative grants (databricks_grants). TF is the source of truth per securable:
 # any privilege not listed is REVOKED on apply, so each entry must be a COMPLETE
-# snapshot (including system defaults and implicit creator grants).
+# snapshot (system defaults + implicit creator grants). Metastore-level grants are
+# managed here too (a metastore admin can administer them via the workspace API).
 #
-# The securable type is taken from the map key prefix; the matching attribute is set
-# and the rest are null.
+# The securable type is taken from the map key prefix; the matching attribute is set.
 
 resource "databricks_grants" "this" {
-  provider = databricks.workspace
   for_each = local.grants
 
   metastore          = each.value.securable_type == "metastore" ? each.value.securable : null
@@ -26,7 +25,6 @@ resource "databricks_grants" "this" {
   }
 
   depends_on = [
-    databricks_metastore.this,
     databricks_catalog.this,
     databricks_schema.this,
     databricks_volume.this,

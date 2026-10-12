@@ -1,5 +1,4 @@
 resource "databricks_catalog" "this" {
-  provider = databricks.workspace
   for_each = var.catalogs
 
   name           = each.key

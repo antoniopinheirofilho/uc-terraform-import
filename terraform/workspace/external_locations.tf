@@ -1,5 +1,4 @@
 resource "databricks_external_location" "this" {
-  provider = databricks.workspace
   for_each = var.external_locations
 
   name            = each.key
@@ -7,6 +6,7 @@ resource "databricks_external_location" "this" {
   credential_name = each.value.credential_name
   owner           = each.value.owner
   comment         = each.value.comment
+  isolation_mode  = each.value.isolation_mode
 
   depends_on = [databricks_storage_credential.this]
 }

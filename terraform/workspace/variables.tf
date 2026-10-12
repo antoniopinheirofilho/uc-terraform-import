@@ -1,25 +1,6 @@
-# ---- Provider / connection wiring ----
-
-variable "databricks_account_host" {
-  description = "Databricks account console host."
-  type        = string
-  default     = "https://accounts.cloud.databricks.com"
-}
-
-variable "databricks_account_id" {
-  description = "Databricks account ID (UUID). Do not hardcode in committed tfvars for a public repo."
-  type        = string
-}
-
 variable "databricks_workspace_host" {
-  description = "Workspace URL used for workspace-level Unity Catalog operations."
+  description = "Workspace URL (a workspace assigned to the target metastore)."
   type        = string
-}
-
-variable "databricks_account_profile" {
-  description = "CLI profile for account-level auth (local dev). Null => environment auth (HCP/CI)."
-  type        = string
-  default     = null
 }
 
 variable "databricks_workspace_profile" {
@@ -28,36 +9,12 @@ variable "databricks_workspace_profile" {
   default     = null
 }
 
-# ---- Metastore (singleton) ----
-
 variable "metastore_id" {
-  description = "Existing metastore ID (used for import IDs)."
+  description = "Metastore ID — used for connection import IDs and metastore-level grant keys. Read it with `databricks metastores summary` (metastore admin, read-only)."
   type        = string
 }
 
-variable "metastore_name" {
-  description = "Unity Catalog metastore name."
-  type        = string
-}
-
-variable "metastore_region" {
-  description = "Cloud region of the metastore."
-  type        = string
-}
-
-variable "metastore_owner" {
-  description = "Metastore owner principal."
-  type        = string
-}
-
-variable "assigned_workspace_ids" {
-  description = "Workspace IDs assigned to the metastore."
-  type        = list(string)
-}
-
-# ---- Data-driven object inventories ----
-# Add an object = add a map entry (no new HCL). Keys are the natural identifiers
-# and double as import IDs.
+# ---- Data-driven object inventories (add an object = add a map entry) ----
 
 # key = catalog name
 variable "catalogs" {
@@ -66,12 +23,12 @@ variable "catalogs" {
     owner          = optional(string)
     comment        = optional(string)
     storage_root   = optional(string)
-    isolation_mode = optional(string)
+    isolation_mode = optional(string) # "OPEN" (default) or "ISOLATED"
   }))
   default = {}
 }
 
-# key = "<catalog>.<schema>"
+# key = "catalog.schema"
 variable "schemas" {
   description = "Schemas. Key = \"catalog.schema\"."
   type = map(object({
@@ -81,7 +38,7 @@ variable "schemas" {
   default = {}
 }
 
-# key = "<catalog>.<schema>.<volume>"
+# key = "catalog.schema.volume"
 variable "volumes" {
   description = "Volumes. Key = \"catalog.schema.volume\"."
   type = map(object({
@@ -96,9 +53,10 @@ variable "volumes" {
 variable "storage_credentials" {
   description = "Storage credentials. Key = name."
   type = map(object({
-    owner    = optional(string)
-    comment  = optional(string)
-    role_arn = string
+    owner          = optional(string)
+    comment        = optional(string)
+    role_arn       = string
+    isolation_mode = optional(string)
   }))
   default = {}
 }
@@ -111,6 +69,7 @@ variable "external_locations" {
     comment         = optional(string)
     url             = string
     credential_name = string
+    isolation_mode  = optional(string)
   }))
   default = {}
 }
@@ -126,7 +85,21 @@ variable "connections" {
   default = {}
 }
 
-# key = "<securable_type>/<full_name>" (also the grants import ID), e.g.
+# key = free label. Bindings for ISOLATED securables (catalog / external_location /
+# storage_credential / credential). Set isolation_mode = "ISOLATED" on the securable
+# above, then list its bound workspaces here.
+variable "workspace_bindings" {
+  description = "Workspace bindings for isolated securables."
+  type = map(object({
+    securable_type = string # catalog | external_location | storage_credential | credential
+    securable_name = string
+    workspace_id   = string
+    binding_type   = optional(string, "BINDING_TYPE_READ_WRITE")
+  }))
+  default = {}
+}
+
+# key = "<securable_type>/<full_name>" (also the import ID), e.g.
 #   "metastore/<metastore_id>", "catalog/my_cat", "schema/my_cat.my_schema",
 #   "volume/my_cat.my_schema.my_vol", "external_location/my_el",
 #   "storage_credential/my_sc", "foreign_connection/my_conn"

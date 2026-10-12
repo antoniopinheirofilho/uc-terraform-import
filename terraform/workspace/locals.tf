@@ -1,8 +1,7 @@
-# Derive structured fields from the map keys so tfvars entries stay minimal.
+# Derive structured fields from map keys so tfvars entries stay minimal.
 # Assumes UC object names do not contain "." (standard for unquoted identifiers).
 
 locals {
-  # "catalog.schema" -> components
   schemas = {
     for k, v in var.schemas : k => {
       catalog = split(".", k)[0]
@@ -12,7 +11,6 @@ locals {
     }
   }
 
-  # "catalog.schema.volume" -> components
   volumes = {
     for k, v in var.volumes : k => {
       catalog     = split(".", k)[0]
@@ -24,7 +22,7 @@ locals {
     }
   }
 
-  # "<securable_type>/<full_name>" -> type + securable (the key is also the import ID)
+  # "<securable_type>/<full_name>" -> type + securable (key is also the import ID)
   grants = {
     for k, v in var.grants : k => {
       securable_type = split("/", k)[0]

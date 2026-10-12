@@ -1,5 +1,4 @@
 resource "databricks_schema" "this" {
-  provider = databricks.workspace
   for_each = local.schemas
 
   catalog_name = each.value.catalog

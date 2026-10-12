@@ -1,0 +1,57 @@
+# Workspace layer — METASTORE ADMIN is sufficient (workspace-level OAuth).
+# Copy to terraform.tfvars (gitignored). Add/remove objects by editing the maps.
+
+databricks_workspace_host = "https://dbc-xxxxxxxx-xxxx.cloud.databricks.com"
+# databricks_workspace_profile = "my-workspace-profile"   # or use env auth
+
+# From `databricks metastores summary` (read-only; metastore admin).
+metastore_id = "00000000-0000-0000-0000-000000000000"
+
+catalogs = {
+  "my_catalog" = {
+    owner        = "owner@example.com"
+    comment      = "example catalog"
+    storage_root = "s3://my-managed-bucket/uc/<account-id>/<metastore-id>" # or omit
+    # isolation_mode = "ISOLATED"   # set when binding to specific workspaces
+  }
+}
+
+schemas = {
+  "my_catalog.my_schema" = { owner = "owner@example.com", comment = "example schema" }
+}
+
+volumes = {
+  "my_catalog.my_schema.my_volume" = { owner = "owner@example.com", comment = "example volume" }
+}
+
+storage_credentials = {
+  "my_sc" = { owner = "owner@example.com", role_arn = "arn:aws:iam::<account>:role/<uc-role>" }
+}
+
+external_locations = {
+  "my_el" = { owner = "owner@example.com", url = "s3://my-bucket/path", credential_name = "my_sc" }
+}
+
+connections = {
+  "my_conn" = {
+    connection_type = "HTTP"
+    owner           = "owner@example.com"
+    options         = { auth_scheme = "bearer", host = "https://api.example.com", port = "443", base_path = "/" }
+  }
+}
+
+# Bindings for ISOLATED securables (set isolation_mode = "ISOLATED" above).
+workspace_bindings = {
+  # "my_catalog->ws1" = { securable_type = "catalog", securable_name = "my_catalog", workspace_id = "1234567890123456" }
+}
+
+# Authoritative — list EVERY privilege on the securable (system defaults + implicit
+# creator grants). Metastore-level grants are managed here too.
+grants = {
+  "metastore/00000000-0000-0000-0000-000000000000" = {
+    grants = [{ principal = "account users", privileges = ["USE_MARKETPLACE_ASSETS"] }]
+  }
+  "catalog/my_catalog" = {
+    grants = [{ principal = "my_group", privileges = ["USE_CATALOG", "USE_SCHEMA", "SELECT"] }]
+  }
+}
