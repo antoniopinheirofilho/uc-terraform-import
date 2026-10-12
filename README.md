@@ -166,15 +166,16 @@ workspace; add **`--include-unbound`** (metastore admin) to also return `ISOLATE
 objects bound to *other* workspaces. `get-bindings` returns all bound workspace IDs
 from any workspace.
 
-**Caveat — contents of ISOLATED catalogs.** You can discover every catalog, external
-location, and storage credential (plus their bindings) from a single workspace, but
-you **cannot enumerate the schemas / volumes / tables inside an `ISOLATED` catalog**
-unless you query from a workspace that catalog is bound to — the API returns
-`Catalog '<name>' is not accessible in current workspace`, even for a metastore admin
-(verified). So if the metastore uses isolated catalogs bound to different workspaces,
-run the schema/volume discovery from each such workspace and merge; the top-level
-securables and bindings still come from one. A non-metastore-admin sees even less —
-only what their workspace can access.
+**Caveat — ISOLATED catalogs.** From an arbitrary workspace you can see an isolated
+catalog's *object* (`catalogs list --include-unbound`) and its *bindings*
+(`get-bindings`) — but **not** its **grants, ownership, schemas, volumes, or tables**.
+`grants get` and `schemas/volumes list` on an isolated catalog (or anything inside it)
+return `Catalog '<name>' is not accessible in current workspace`, even for a metastore
+admin (verified — grants are binding-aware too). So for each isolated catalog, run its
+**grants + schema/volume/table discovery from a workspace it is bound to**, and merge;
+only the top-level securables and bindings come from a single workspace. The same
+applies to isolated external locations / storage credentials. A non-metastore-admin
+sees even less — only what their workspace can access.
 
 Every object must end up either in the tfvars maps or consciously excluded.
 
