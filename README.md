@@ -7,7 +7,7 @@ Bring existing, manually-created Unity Catalog (UC) objects under Terraform mana
 
 - Databricks-side only — AWS/cloud resources are assumed to already exist.
 - Grants are **authoritative**: `databricks_grants` revokes any privilege not in
-  config. Snapshots must be complete. See [§5](#5-reconcile-and-clean).
+  config. Snapshots must be complete. See [§5](#5-build-the-tfvars-and-clean-up).
 
 ## What this template supports / doesn't
 
@@ -40,7 +40,7 @@ Bring existing, manually-created Unity Catalog (UC) objects under Terraform mana
 - **Creating the underlying cloud infrastructure** (S3 buckets, IAM roles, workspaces)
   — Databricks-side only; cloud resources are assumed to exist.
 - **Non-metastore-admin discovery** — a caller without metastore admin only sees their
-  own workspace's objects and must run the exporter per-workspace ([§4a](#4a-resource-exporter-primary)).
+  own workspace's objects and must inventory per-workspace ([§4](#4-discover-the-inventory-apicli)).
 
 ### Assumptions
 - **Metastore admin + workspace-level OAuth** (no account admin required).
@@ -109,72 +109,64 @@ Backend ships unset (local state). **Configure remote state (e.g. HCP Terraform)
 ## 3. Workflow
 
 ```
-4. DISCOVER → 5. RECONCILE/CLEAN → 6. IMPORT (plan→0) → 7. VERIFY
+4. DISCOVER (API/CLI) → 5. BUILD tfvars + CLEAN → 6. IMPORT (plan→0) → 7. VERIFY
 ```
 
-**Never `apply` exporter output without reviewing `plan`.** The exporter is a
-starting point, not a safe-to-apply artifact.
+**Never `apply` until `plan` shows only imports** (`0 to add, 0 to change, 0 to destroy`).
 
 ---
 
-## 4. Extract the snapshot (discovery)
+## 4. Discover the inventory (API/CLI)
 
-### 4a. Resource Exporter (primary)
-
-Extract the snapshot with the provider's experimental **Resource Exporter**, run with
-`-native-import` to emit import blocks with correct IDs. Run it as a **metastore
-admin** against a workspace assigned to the metastore:
-
-```bash
-cd terraform
-terraform init
-BIN="$PWD/$(find .terraform/providers -name 'terraform-provider-databricks*' -type f | head -1)"
-
-UC="uc-catalogs,uc-schemas,uc-volumes,uc-connections,uc-storage-credentials,uc-external-locations,uc-grants"
-DATABRICKS_CONFIG_PROFILE=my-workspace "$BIN" exporter \
-  -directory="../exporter-output" -listing="$UC" -services="$UC" \
-  -native-import -generateProviderDeclaration=false
-```
-
-Scope with `-match` / `-matchRegex`. Output: `uc-*.tf`, `import.tf`, `import.sh`.
-(`uc-metastores` is omitted — the metastore object is out of scope in this version.)
-
-**One workspace is enough.** A metastore admin sees every securable in the metastore
-from a single attached workspace — including `ISOLATED` ones bound to *other*
-workspaces. (Verified: from an unbound workspace, an isolated catalog is hidden in the
-default list but appears with `--include-unbound`, and `get-bindings` returns all
-bound workspace IDs.) You do **not** need to run the exporter in every workspace.
-*Exception:* a non-metastore-admin only sees what their workspace can access, so they
-must run per-workspace and merge with the exporter's `-prefix`.
-
-### 4b. CLI/SDK cross-check (find gaps)
-
-Build an independent inventory (all read-only) and diff it against the export:
+Build the inventory with read-only Databricks API/CLI calls, then turn it into
+`terraform.tfvars` map entries (§8). The map key is also the import ID, so there is no
+separate import-ID bookkeeping. Run as a **metastore admin** against one workspace
+assigned to the metastore:
 
 ```bash
-databricks metastores summary -p my-workspace -o json             # metastore id/name/region
+databricks metastores summary -p my-workspace -o json              # metastore_id/name/region
 databricks catalogs list --include-unbound -p my-workspace -o json
-databricks external-locations list -p my-workspace -o json
+databricks schemas list <catalog> -p my-workspace -o json
+databricks volumes list <catalog> <schema> -p my-workspace -o json
 databricks storage-credentials list -p my-workspace -o json
+databricks external-locations list -p my-workspace -o json
 databricks connections list -p my-workspace -o json
 databricks workspace-bindings get-bindings <securable_type> <name> -p my-workspace -o json
 databricks grants get <securable_type> <full_name> -p my-workspace -o json
 ```
 
-Every object must end up either managed+imported or consciously excluded.
+Map each result into the matching tfvars map. For dozens/hundreds of objects, script
+the JSON → map transformation (`jq` / Python) instead of hand-editing.
+
+> Why not the Terraform Resource Exporter? It only *generates* per-object HCL and
+> import IDs — both of which this template already provides (static `for_each`
+> resources; import IDs derived from map keys). You would still have to transform its
+> output into tfvars, and the API/CLI JSON is easier to script. The exporter also
+> misses account-level objects and emits system properties, so it was never the source
+> of truth. The API/CLI inventory is.
+
+**One workspace is enough.** A metastore admin sees every securable in the metastore
+from a single attached workspace — including `ISOLATED` ones bound to *other*
+workspaces (hidden from the default `catalogs list`, shown with `--include-unbound`;
+`get-bindings` returns all bound workspace IDs). *Exception:* a non-metastore-admin
+only sees their own workspace's objects and must inventory per-workspace and merge.
+
+Every object must end up either in the tfvars maps (managed+imported) or consciously
+excluded.
 
 ---
 
-## 5. Reconcile and clean
+## 5. Build the tfvars and clean up
 
-Fold exporter output into `terraform/` and apply these corrections (each was required
-for a clean no-op):
+Populate the tfvars maps from the §4 inventory and apply these corrections (each was
+required for a clean no-op):
 
-1. **Complete every grants block.** Include all live privileges — system defaults
-   (e.g. `account users → USE_MARKETPLACE_ASSETS`) and implicit creator grants.
-   **Drop grants the exporter invented but that aren't live** (seen in practice; the
-   live `plan` is the source of truth). Metastore-level grants (`metastore/<id>`) are
-   managed here too — a metastore admin can administer them.
+1. **Complete every grants block.** List all live privileges per securable — system
+   defaults (e.g. `account users → USE_MARKETPLACE_ASSETS`) and implicit creator
+   grants. Include **only** privileges that are actually live; the `plan` is the
+   source of truth (a block that would *add* a privilege means it wasn't live — remove
+   it). Metastore-level grants (`metastore/<id>`) are managed here too — a metastore
+   admin can administer them.
 2. **Strip system `properties`** on catalogs/schemas (`collation`, `owner="root"`):
    `lifecycle { ignore_changes = [properties] }` (already in the resources).
 3. **Secrets aren't exported** (connection `bearer_token`, credential keys). If a plan
@@ -198,7 +190,7 @@ for a clean no-op):
 | `databricks_workspace_binding` | `<securable_type>\|<securable_name>\|<workspace_id>` |
 | `databricks_grants` | `<securable_type>/<full_name>` (e.g. `catalog/<name>`, `schema/<cat.schema>`, `metastore/<metastore_id>`, `external_location/<name>`) |
 
-When unsure, use the IDs in the exporter's `import.tf`.
+`imports.tf` constructs these IDs automatically from your map keys.
 
 ---
 
@@ -233,7 +225,7 @@ terraform plan        # "No changes. Your infrastructure matches the configurati
 terraform state list  # count == imported objects
 ```
 
-Reconcile `state list` against the §4b inventory. Document any exclusions. Import
+Reconcile `state list` against the §4 inventory. Document any exclusions. Import
 blocks can then be removed (resources stay managed) or left in place.
 
 ---
@@ -293,8 +285,8 @@ metastore-admin workspace layer.
 
 ## 10. Safety & publishing
 
-- **Never commit:** state, real `*.tfvars`, `.databrickscfg`, secrets, raw exporter
-  output. `.gitignore` enforces this.
+- **Never commit:** state, real `*.tfvars`, `.databrickscfg`, secrets, raw discovery
+  output (JSON with real identifiers). `.gitignore` enforces this.
 - Commit only `*.tfvars.example` and sanitized identifiers.
 - Before publishing, scrub metastore/workspace IDs, bucket paths, IdP group names,
   connection hosts/tokens.
