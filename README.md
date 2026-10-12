@@ -9,15 +9,43 @@ Bring existing, manually-created Unity Catalog (UC) objects under Terraform mana
 - Grants are **authoritative**: `databricks_grants` revokes any privilege not in
   config. Snapshots must be complete. See [§5](#5-reconcile-and-clean).
 
-## Scope & assumptions
+## What this template supports / doesn't
 
-This version manages **workspace-level** UC objects and assumes **metastore admin +
-workspace-level OAuth** — no account admin required.
+### Supports
+- **Importing (adopting) existing workspace-level UC objects** into Terraform with a
+  clean no-op plan — not creating them from scratch (though the same config also
+  creates them once import blocks are removed; see [§8](#8-scaling--data-driven-model)):
+  catalogs, schemas, volumes, external locations, storage credentials, connections,
+  **workspace bindings**, and **grants + ownership** (including metastore-level grants).
+- **Data-driven scaling** — objects are map entries in `terraform.tfvars`, not
+  hand-written HCL; `for_each` import blocks are generated from the same maps.
+- **Authoritative grants** per securable (`databricks_grants`), with `owner` captured.
+- **Isolated securables** via `isolation_mode` + `databricks_workspace_binding`.
+- **AWS** storage credentials (IAM role, self-assuming UC role pattern).
+- **Any auth that the Databricks provider accepts** — CLI profile (dev) or service
+  principal via env vars (HCP/CI).
 
-**Out of scope in this version:** the metastore object (`databricks_metastore`) and
-workspace assignments (`databricks_metastore_assignment`). Those are account-level
-(account admin) and are assumed to already exist, managed outside Terraform. They can
-be added later as a separate account-admin layer (see [§9](#9-adding-the-account-layer-later)).
+### Does NOT support (in this version)
+- **The metastore object and workspace assignments** (`databricks_metastore`,
+  `databricks_metastore_assignment`) — account-level, assumed to already exist and
+  managed outside Terraform. Add later as an account-admin layer ([§9](#9-adding-the-account-layer-later)).
+- **Tables, views, materialized views, functions, registered models** — data objects
+  are not managed (manage their containers + grants instead).
+- **Delta Sharing** shares/recipients/providers, and **system schemas / Lakehouse
+  Federation foreign catalogs** beyond the plain `connection` object.
+- **Azure / GCP storage credentials** — only `aws_iam_role` is wired in; Azure
+  (`azure_managed_identity`) / GCP variants would need to be added.
+- **Secret values** (connection `bearer_token`, credential keys) — write-only, not
+  stored or managed; set out-of-band.
+- **Creating the underlying cloud infrastructure** (S3 buckets, IAM roles, workspaces)
+  — Databricks-side only; cloud resources are assumed to exist.
+- **Non-metastore-admin discovery** — a caller without metastore admin only sees their
+  own workspace's objects and must run the exporter per-workspace ([§4a](#4a-resource-exporter-primary)).
+
+### Assumptions
+- **Metastore admin + workspace-level OAuth** (no account admin required).
+- The target metastore and the workspace you connect to already exist and are assigned.
+- Terraform **≥ 1.7**, Databricks provider **≥ 1.59**.
 
 ---
 
