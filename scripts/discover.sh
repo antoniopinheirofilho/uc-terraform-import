@@ -82,9 +82,11 @@ for prof in "$@"; do
     dump "$d/bindings/external_location__$n.json" workspace-bindings get-bindings external_location "$n" -p "$prof"
     dump "$d/grants/external_location__$n.json"   grants get external_location "$n" -p "$prof"
   done
+  # note: grants get uses securable type `connection` (the Terraform resource attribute
+  # is `foreign_connection`, but the CLI/API securable type is `connection`).
   [ -f "$d/connections.json" ] && field name <"$d/connections.json" | while read -r n; do
     [ -z "$n" ] && continue
-    dump "$d/grants/foreign_connection__$n.json" grants get foreign_connection "$n" -p "$prof"
+    dump "$d/grants/connection__$n.json" grants get connection "$n" -p "$prof"
   done
 
   # catalogs -> schemas -> volumes, with grants at each level.
