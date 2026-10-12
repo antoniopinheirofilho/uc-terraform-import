@@ -137,12 +137,12 @@ separate import-ID bookkeeping. Run as a **metastore admin** against one workspa
 assigned to the metastore:
 
 ```bash
-databricks metastores summary -p my-workspace -o json              # metastore_id/name/region
+databricks metastores summary -p my-workspace -o json                       # metastore_id/name/region
 databricks catalogs list --include-unbound -p my-workspace -o json
 databricks schemas list <catalog> -p my-workspace -o json
 databricks volumes list <catalog> <schema> -p my-workspace -o json
-databricks storage-credentials list -p my-workspace -o json
-databricks external-locations list -p my-workspace -o json
+databricks storage-credentials list --include-unbound -p my-workspace -o json
+databricks external-locations list --include-unbound -p my-workspace -o json
 databricks connections list -p my-workspace -o json
 databricks workspace-bindings get-bindings <securable_type> <name> -p my-workspace -o json
 databricks grants get <securable_type> <full_name> -p my-workspace -o json
@@ -158,11 +158,23 @@ the JSON → map transformation (`jq` / Python) instead of hand-editing.
 > misses account-level objects and emits system properties, so it was never the source
 > of truth. The API/CLI inventory is.
 
-**One workspace is enough.** A metastore admin sees every securable in the metastore
-from a single attached workspace — including `ISOLATED` ones bound to *other*
-workspaces (hidden from the default `catalogs list`, shown with `--include-unbound`;
-`get-bindings` returns all bound workspace IDs). *Exception:* a non-metastore-admin
-only sees their own workspace's objects and must inventory per-workspace and merge.
+### Workspace bindings affect what `list` returns
+
+`list` is **binding-aware**. By default `catalogs`, `external-locations`, and
+`storage-credentials` list only objects that are OPEN or bound to the current
+workspace; add **`--include-unbound`** (metastore admin) to also return `ISOLATED`
+objects bound to *other* workspaces. `get-bindings` returns all bound workspace IDs
+from any workspace.
+
+**Caveat — contents of ISOLATED catalogs.** You can discover every catalog, external
+location, and storage credential (plus their bindings) from a single workspace, but
+you **cannot enumerate the schemas / volumes / tables inside an `ISOLATED` catalog**
+unless you query from a workspace that catalog is bound to — the API returns
+`Catalog '<name>' is not accessible in current workspace`, even for a metastore admin
+(verified). So if the metastore uses isolated catalogs bound to different workspaces,
+run the schema/volume discovery from each such workspace and merge; the top-level
+securables and bindings still come from one. A non-metastore-admin sees even less —
+only what their workspace can access.
 
 Every object must end up either in the tfvars maps or consciously excluded.
 
