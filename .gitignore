@@ -1,0 +1,42 @@
+# ---- Terraform ----
+# Local state and backups (never commit state)
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl.bak
+crash.log
+crash.*.log
+
+# Variable files that may contain customer-specific or sensitive values.
+# Commit only *.tfvars.example templates.
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Plan output files (may embed sensitive values / resource IDs)
+*.tfplan
+*.plan
+
+# ---- Credentials / secrets ----
+.databrickscfg
+*.pem
+*.key
+*secret*
+*credential*.json
+.env
+.env.*
+
+# ---- Exporter / discovery output (may contain real identifiers) ----
+exporter-output/
+generated/
+*.exported.tf
+
+# ---- OS / editor ----
+.DS_Store
+*.swp
+.idea/
+.vscode/

@@ -1,0 +1,86 @@
+# Copy to terraform.tfvars (gitignored) and fill in for your environment.
+# Never commit a real terraform.tfvars to a public repo.
+#
+# Data-driven model: add/remove UC objects by editing the maps below — no new HCL.
+# Map keys are the natural identifiers and double as Terraform import IDs.
+
+databricks_account_host   = "https://accounts.cloud.databricks.com"
+databricks_account_id     = "00000000-0000-0000-0000-000000000000"
+databricks_workspace_host = "https://dbc-xxxxxxxx-xxxx.cloud.databricks.com"
+
+# Local-dev auth via CLI profiles. Leave unset (null) to use environment auth
+# (service principal via DATABRICKS_CLIENT_ID / DATABRICKS_CLIENT_SECRET), e.g. HCP/CI.
+# databricks_account_profile   = "my-account-profile"
+# databricks_workspace_profile = "my-workspace-profile"
+
+metastore_id           = "00000000-0000-0000-0000-000000000000"
+metastore_name         = "my-metastore"
+metastore_region       = "us-east-1"
+metastore_owner        = "owner@example.com"
+assigned_workspace_ids = ["1234567890123456"]
+
+# key = catalog name
+catalogs = {
+  "my_catalog" = {
+    owner        = "owner@example.com"
+    comment      = "example catalog"
+    storage_root = "s3://my-managed-bucket/uc/<account-id>/<metastore-id>" # or omit
+  }
+}
+
+# key = "catalog.schema"
+schemas = {
+  "my_catalog.my_schema" = { owner = "owner@example.com", comment = "example schema" }
+}
+
+# key = "catalog.schema.volume"
+volumes = {
+  "my_catalog.my_schema.my_volume" = { owner = "owner@example.com", comment = "example volume" }
+  # volume_type defaults to MANAGED; set to "EXTERNAL" with an external location if needed.
+}
+
+# key = storage credential name
+storage_credentials = {
+  "my_sc" = {
+    owner    = "owner@example.com"
+    role_arn = "arn:aws:iam::<account>:role/<uc-role>"
+  }
+}
+
+# key = external location name
+external_locations = {
+  "my_el" = {
+    owner           = "owner@example.com"
+    url             = "s3://my-bucket/path"
+    credential_name = "my_sc"
+  }
+}
+
+# key = connection name (secrets like bearer_token are NOT stored here)
+connections = {
+  "my_conn" = {
+    connection_type = "HTTP"
+    owner           = "owner@example.com"
+    options         = { auth_scheme = "bearer", host = "https://api.example.com", port = "443", base_path = "/" }
+  }
+}
+
+# key = "<securable_type>/<full_name>" (also the import ID). Authoritative — list
+# EVERY privilege on the securable (system defaults + implicit creator grants).
+grants = {
+  "metastore/<metastore-id>" = {
+    grants = [
+      { principal = "account users", privileges = ["USE_MARKETPLACE_ASSETS"] },
+    ]
+  }
+  "catalog/my_catalog" = {
+    grants = [
+      { principal = "my_group", privileges = ["USE_CATALOG", "USE_SCHEMA", "SELECT"] },
+    ]
+  }
+  # "schema/my_catalog.my_schema"             = { grants = [...] }
+  # "volume/my_catalog.my_schema.my_volume"   = { grants = [...] }
+  # "external_location/my_el"                 = { grants = [...] }
+  # "storage_credential/my_sc"                = { grants = [...] }
+  # "foreign_connection/my_conn"              = { grants = [...] }
+}
