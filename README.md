@@ -274,6 +274,18 @@ authoritative `databricks_grants` revoke or an `owner` change is an update, so t
 (e.g. on HCP Terraform), add a policy that denies any run whose plan contains a
 create/update/delete/replace.
 
+**Toggling the guard.** It is set per object *type* — one `prevent_destroy` line in
+each of `catalogs.tf`, `schemas.tf`, `volumes.tf`, `storage_credentials.tf`,
+`external_locations.tf`, `connections.tf`, `bindings.tf`, `grants.tf` (8 total, each
+covering all instances of that type via `for_each`). Terraform requires a literal here
+— it can't be a variable — so flip the whole set with one command when you move past
+import validation:
+
+```bash
+# lift the guard across all resource types
+sed -i '' 's/prevent_destroy = true/prevent_destroy = false/' terraform/*.tf
+```
+
 ---
 
 ## 7. Scaling — data-driven model
