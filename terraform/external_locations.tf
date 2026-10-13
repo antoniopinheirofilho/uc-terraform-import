@@ -8,5 +8,9 @@ resource "databricks_external_location" "this" {
   comment         = each.value.comment
   isolation_mode  = each.value.isolation_mode
 
+  lifecycle {
+    prevent_destroy = true
+  }
+
   depends_on = [databricks_storage_credential.this]
 }

@@ -24,6 +24,10 @@ resource "databricks_grants" "this" {
     }
   }
 
+  lifecycle {
+    prevent_destroy = true
+  }
+
   depends_on = [
     databricks_catalog.this,
     databricks_schema.this,

@@ -259,6 +259,21 @@ every object correctly and safely. `terraform plan` writes nothing — it change
 neither Databricks nor state. **Do not run `terraform apply`; it is out of scope for
 this project.**
 
+### Guardrail: `prevent_destroy`
+
+Every resource carries `lifecycle { prevent_destroy = true }`. Because the goal is an
+import-only plan, nothing should ever be destroyed — so if a plan proposes a destroy or
+replace, Terraform **errors and stops** instead of showing an actionable change. That
+is the intended outcome: fail loud rather than risk dropping a resource the metastore
+relies on. It leaves normal import plans unaffected (verified: the import plan is still
+`N to import, 0 add/change/destroy`).
+
+Scope note: `prevent_destroy` blocks destroys/replaces, **not** in-place updates — an
+authoritative `databricks_grants` revoke or an `owner` change is an update, so the
+`0 to change` gate above is what guards those. For enforcement against updates too
+(e.g. on HCP Terraform), add a policy that denies any run whose plan contains a
+create/update/delete/replace.
+
 ---
 
 ## 7. Scaling — data-driven model

@@ -8,5 +8,9 @@ resource "databricks_volume" "this" {
   owner        = each.value.owner
   comment      = each.value.comment
 
+  lifecycle {
+    prevent_destroy = true
+  }
+
   depends_on = [databricks_schema.this]
 }

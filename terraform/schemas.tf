@@ -7,7 +7,8 @@ resource "databricks_schema" "this" {
   comment      = each.value.comment
 
   lifecycle {
-    ignore_changes = [properties]
+    ignore_changes  = [properties]
+    prevent_destroy = true
   }
 
   depends_on = [databricks_catalog.this]

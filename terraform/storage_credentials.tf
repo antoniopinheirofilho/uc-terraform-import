@@ -12,4 +12,8 @@ resource "databricks_storage_credential" "this" {
   aws_iam_role {
     role_arn = each.value.role_arn
   }
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }

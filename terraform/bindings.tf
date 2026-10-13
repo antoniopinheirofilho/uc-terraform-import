@@ -10,6 +10,10 @@ resource "databricks_workspace_binding" "this" {
   workspace_id   = each.value.workspace_id
   binding_type   = each.value.binding_type
 
+  lifecycle {
+    prevent_destroy = true
+  }
+
   depends_on = [
     databricks_catalog.this,
     databricks_external_location.this,

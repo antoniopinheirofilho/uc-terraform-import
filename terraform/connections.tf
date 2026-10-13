@@ -8,4 +8,8 @@ resource "databricks_connection" "this" {
   connection_type = each.value.connection_type
   owner           = each.value.owner
   options         = each.value.options
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }

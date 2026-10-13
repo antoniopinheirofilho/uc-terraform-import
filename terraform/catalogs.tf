@@ -7,8 +7,10 @@ resource "databricks_catalog" "this" {
   storage_root   = each.value.storage_root
   isolation_mode = each.value.isolation_mode
 
-  # System-managed properties (e.g. collation) are not customer config.
   lifecycle {
+    # System-managed properties (e.g. collation) are not customer config.
     ignore_changes = [properties]
+    # Import-only project: a proposed destroy/replace fails the plan on purpose.
+    prevent_destroy = true
   }
 }
