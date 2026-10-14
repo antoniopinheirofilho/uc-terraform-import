@@ -1,0 +1,10 @@
+# Schemas. Copy to schemas.auto.tfvars (gitignored). Key = "catalog.schema".
+#   import_id (when importing) = "catalog.schema".
+
+schemas = {
+  "my_catalog.my_schema" = {
+    owner     = "owner@example.com"
+    comment   = "example schema"
+    import_id = "my_catalog.my_schema"
+  }
+}

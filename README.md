@@ -1,45 +1,43 @@
-# Unity Catalog → Terraform: Import Validation Baseline
+# Unity Catalog → Terraform: Import & Manage Baseline
 
-Produce and validate a Terraform configuration — resources + native `import {}`
-blocks — that would adopt existing Unity Catalog (UC) objects into Terraform
-**without recreating anything**.
+Adopt **existing**, manually-created Unity Catalog (UC) objects into Terraform **by
+importing them (never recreating)**, then manage and extend them going forward.
 
-**Scope of this project: everything up to `terraform plan`.** Success is a plan that
-shows **only imports**:
+The safety contract at every step: a `terraform plan` must show **only imports** before
+you apply —
 
 ```
 Plan: N to import, 0 to add, 0 to change, 0 to destroy.
 ```
 
-That proves every in-scope object would be adopted safely — nothing created, changed,
-or destroyed. **Performing the import (`terraform apply`) and ongoing lifecycle
-management are out of scope.** Every step in this runbook is **read-only** —
-discovery is API/CLI reads, and `terraform plan` modifies neither Databricks nor
-state.
+— which proves adoption changes nothing live. Discovery and `plan` are read-only;
+`apply` only writes once you've reviewed that plan.
 
 - Databricks-side only — AWS/cloud resources are assumed to already exist.
-- Grants are **authoritative**: a `databricks_grants` block is a complete snapshot of
-  a securable's grants, so an incomplete snapshot shows up in the plan as a change.
-  See [§5](#5-build-the-tfvars-and-clean-up).
+- Grants are **authoritative**: a `databricks_grants` block is a complete snapshot of a
+  securable's grants, so an incomplete snapshot shows up in the plan as a change (and on
+  apply would revoke). See [§5](#5-build-the-tfvars-and-clean-up).
+- Importing is gated **per object** by an `import_id` field, so existing objects are
+  imported and brand-new ones are created — from the same config. See [§7](#7-the-import_id-gate--lifecycle).
 
 ## What this template supports / doesn't
 
 ### Supports
-- **Validating the adoption** of existing workspace-level UC objects via a clean plan
-  (`N to import, 0 add/change/destroy`): catalogs, schemas, volumes, external
-  locations, storage credentials, connections, **workspace bindings**, and
-  **grants + ownership** (including metastore-level grants).
-- **Data-driven scaling** — objects are map entries in `terraform.tfvars`, not
-  hand-written HCL; `for_each` import blocks are derived from the same maps.
+- **Importing existing** workspace-level UC objects to a clean no-op plan, then managing
+  them: catalogs, schemas, volumes, external locations, storage credentials, connections,
+  **workspace bindings**, and **grants + ownership** (including metastore-level grants).
+- **Per-object import gate** (`import_id`): import existing objects and create new ones
+  side by side; mixed and incremental migrations.
+- **Data-driven, split by resource type** — objects are map entries in per-type
+  `*.auto.tfvars` files, not hand-written HCL.
 - **Authoritative grants** per securable (`databricks_grants`), with `owner` captured.
 - **Isolated securables** via `isolation_mode` + `databricks_workspace_binding`.
 - **AWS** storage credentials (IAM role, self-assuming UC role pattern).
-- **Any auth the Databricks provider accepts** — CLI profile (dev) or service
-  principal via env vars (HCP/CI).
+- **`prevent_destroy` guard** on every resource — a destroy/replace fails the plan loud.
+- **Any auth the Databricks provider accepts** — CLI profile (dev) or service principal
+  via env vars (HCP/CI).
 
 ### Does NOT support (in this version)
-- **`terraform apply` / performing the import, and day-2 lifecycle** (create / update /
-  delete) — out of scope. This project stops at a validated `plan`.
 - **The metastore object and workspace assignments** (`databricks_metastore`,
   `databricks_metastore_assignment`) — account-level, assumed to already exist and
   managed outside Terraform.
@@ -60,8 +58,8 @@ state.
 - **Metastore admin + workspace-level OAuth** (no account admin required).
 - The target metastore and the workspace you connect to already exist and are assigned.
 - The workspace you point the provider at can access all in-scope catalogs (they are
-  OPEN, or bound to it). Catalogs **isolated to other workspaces** must be imported in
-  a separate run pointed at a workspace they are bound to — see [§6](#6-plan--validate-the-deliverable).
+  OPEN, or bound to it). Catalogs **isolated to other workspaces** are handled in a
+  separate run pointed at a bound workspace — see [§6](#6-plan-then-apply).
 - Terraform **≥ 1.7**, Databricks provider **≥ 1.59**.
 
 ---
@@ -95,11 +93,11 @@ assignments are out of scope in this version.
 databricks auth login --host https://<workspace-host> --profile my-workspace
 ```
 
-Set `databricks_workspace_profile` in `terraform.tfvars`. For HCP/CI, leave it null
+Set `databricks_workspace_profile` in `provider.auto.tfvars`. For HCP/CI, leave it null
 and use a service principal: `DATABRICKS_CLIENT_ID` / `DATABRICKS_CLIENT_SECRET`.
 
-The config needs the metastore ID (for connection import IDs and metastore-level grant
-keys). Get it read-only as a metastore admin:
+You'll also need the **metastore ID** to build connection and metastore-grant import IDs.
+Get it read-only as a metastore admin:
 
 ```bash
 databricks metastores summary -p my-workspace -o json   # returns metastore_id, name, region
@@ -111,32 +109,38 @@ databricks metastores summary -p my-workspace -o json   # returns metastore_id, 
 
 ```
 terraform/
-├── versions.tf providers.tf variables.tf locals.tf
-├── catalogs.tf schemas.tf volumes.tf
-├── external_locations.tf storage_credentials.tf connections.tf
-├── bindings.tf grants.tf imports.tf
-└── terraform.tfvars.example
+├── versions.tf  providers.tf  variables.tf  locals.tf
+├── catalogs.tf  schemas.tf  volumes.tf
+├── external_locations.tf  storage_credentials.tf  connections.tf
+├── bindings.tf  grants.tf  imports.tf
+└── *.auto.tfvars.example         # one example per resource type + provider.auto.tfvars.example
 ```
 
-Backend ships unset (local state).
+**Data is split by resource type.** Copy each `*.auto.tfvars.example` to the same name
+without `.example` and fill it in: `provider.auto.tfvars`, `catalogs.auto.tfvars`,
+`schemas.auto.tfvars`, `volumes.auto.tfvars`, `storage_credentials.auto.tfvars`,
+`external_locations.auto.tfvars`, `connections.auto.tfvars`,
+`workspace_bindings.auto.tfvars`, `grants.auto.tfvars`. Terraform auto-loads every
+`*.auto.tfvars` file and merges them. The real files are gitignored; only the
+`.example` templates are committed. Backend ships unset (local state).
 
 ---
 
 ## 3. Workflow
 
 ```
-4. DISCOVER (API/CLI) → 5. BUILD tfvars + CLEAN → 6. PLAN & VALIDATE (0 add/change/destroy)
+4. DISCOVER (API/CLI) → 5. BUILD tfvars → 6. PLAN (import-only) → review → APPLY (adopt) → 7. MANAGE
 ```
 
-Everything here is read-only. The project ends at a validated plan — no `apply`.
+Discovery and `plan` are read-only. `apply` runs only after the plan is import-only and
+reviewed.
 
 ---
 
 ## 4. Discover the inventory (API/CLI)
 
-Build the inventory with read-only Databricks API/CLI calls, then turn it into
-`terraform.tfvars` map entries (§7). The map key is also the import ID, so there is no
-separate import-ID bookkeeping. Run as a **metastore admin** against one workspace
+Build the inventory with read-only Databricks API/CLI calls, then turn it into the
+per-type `*.auto.tfvars` maps (§5). Run as a **metastore admin** against one workspace
 assigned to the metastore:
 
 ```bash
@@ -168,11 +172,10 @@ It is read-only and automatically skips system-managed objects (the `system` /
 `samples` catalogs and the Default-Storage external location).
 
 > Why not the Terraform Resource Exporter? It only *generates* per-object HCL and
-> import IDs — both of which this template already provides (static `for_each`
-> resources; import IDs derived from map keys). You would still have to transform its
-> output into tfvars, and the API/CLI JSON is easier to script. The exporter also
-> misses account-level objects and emits system properties, so it was never the source
-> of truth. The API/CLI inventory is.
+> import IDs — both of which this template already provides. You would still have to
+> transform its output into tfvars, and the API/CLI JSON is easier to script. The
+> exporter also misses account-level objects and emits system properties, so it was
+> never the source of truth. The API/CLI inventory is.
 
 ### Workspace bindings
 
@@ -190,8 +193,9 @@ Every object must end up either in the tfvars maps or consciously excluded.
 
 ## 5. Build the tfvars and clean up
 
-Populate the tfvars maps from the §4 inventory and apply these corrections (each is
-needed for a clean no-op plan):
+Populate the per-type `*.auto.tfvars` maps from the §4 inventory. **Set `import_id` on
+every existing object you are adopting** (see [§7](#7-the-import_id-gate--lifecycle) and
+the table below). Then apply these corrections (each is needed for a clean no-op plan):
 
 1. **Complete every grants block.** List all live privileges per securable — system
    defaults (e.g. `account users → USE_MARKETPLACE_ASSETS`) and implicit creator
@@ -208,9 +212,9 @@ needed for a clean no-op plan):
    the Databricks-managed Default Storage external location + its auto-grant.
 6. **Set `owner`** on each resource to the live value.
 
-### Import ID formats
+### `import_id` values (what to put in each entry's `import_id`)
 
-| Resource | ID |
+| Resource | `import_id` |
 | --- | --- |
 | `databricks_catalog` | `<catalog>` |
 | `databricks_schema` | `<catalog>.<schema>` |
@@ -221,11 +225,12 @@ needed for a clean no-op plan):
 | `databricks_workspace_binding` | `<securable_type>\|<securable_name>\|<workspace_id>` |
 | `databricks_grants` | `<securable_type>/<full_name>` (e.g. `catalog/<name>`, `schema/<cat.schema>`, `metastore/<metastore_id>`, `external_location/<name>`) |
 
-`imports.tf` constructs these IDs automatically from your map keys.
+`imports.tf` uses each entry's `import_id` verbatim. For most types it equals the map
+key; connections and bindings use the composite shown.
 
 ---
 
-## 6. Plan & validate (the deliverable)
+## 6. Plan, then apply
 
 ```bash
 cd terraform
@@ -239,11 +244,17 @@ Iterate §5 until the plan reads exactly:
 Plan: N to import, 0 to add, 0 to change, 0 to destroy.
 ```
 
-- **Cross-check `N` and the listed resource addresses against your §4 inventory** —
-  every in-scope object should appear; nothing missing, nothing extra.
+- **Cross-check `N` and the listed addresses against your §4 inventory** — every object
+  you're adopting should appear; nothing missing, nothing extra.
 - **`to change` / `to destroy` must be 0.** Anything else means config ≠ reality — fix
   it in §5 (a `databricks_grants` block that would add/remove a `grant {}` means the
-  snapshot is wrong).
+  snapshot is wrong; on apply that would revoke/grant live).
+
+Once the plan is import-only and reviewed/approved, adopt the objects into state:
+
+```bash
+terraform apply       # imports only; 0 changes to Databricks
+```
 
 **Isolated catalogs & the provider workspace.** `plan` reads every object through the
 single workspace the provider points at, so a catalog (or its schemas/volumes/grants)
@@ -251,66 +262,80 @@ single workspace the provider points at, so a catalog (or its schemas/volumes/gr
 Catalog '<name>' is not accessible in current workspace` (verified). Point the provider
 at a workspace that can access the catalog — and for a metastore with isolated catalogs
 spread across workspaces, run the config once per bound workspace (that workspace's
-`databricks_workspace_host` + the matching subset of objects), validating each
-separately.
-
-This validated plan **is** the deliverable: it proves the configuration would adopt
-every object correctly and safely. `terraform plan` writes nothing — it changes
-neither Databricks nor state. **Do not run `terraform apply`; it is out of scope for
-this project.**
+`databricks_workspace_host` + the matching subset of objects), with its own state.
 
 ### Guardrail: `prevent_destroy`
 
-Every resource carries `lifecycle { prevent_destroy = true }`. Because the goal is an
-import-only plan, nothing should ever be destroyed — so if a plan proposes a destroy or
-replace, Terraform **errors and stops** instead of showing an actionable change. That
-is the intended outcome: fail loud rather than risk dropping a resource the metastore
-relies on. It leaves normal import plans unaffected (verified: the import plan is still
-`N to import, 0 add/change/destroy`).
-
-Scope note: `prevent_destroy` blocks destroys/replaces, **not** in-place updates — an
-authoritative `databricks_grants` revoke or an `owner` change is an update, so the
-`0 to change` gate above is what guards those. For enforcement against updates too
-(e.g. on HCP Terraform), add a policy that denies any run whose plan contains a
-create/update/delete/replace.
-
-**Toggling the guard.** It is set per object *type* — one `prevent_destroy` line in
-each of `catalogs.tf`, `schemas.tf`, `volumes.tf`, `storage_credentials.tf`,
-`external_locations.tf`, `connections.tf`, `bindings.tf`, `grants.tf` (8 total, each
-covering all instances of that type via `for_each`). Terraform requires a literal here
-— it can't be a variable — so flip the whole set with one command when you move past
-import validation:
+Every resource carries `lifecycle { prevent_destroy = true }`. If a plan ever proposes a
+destroy or replace, Terraform **errors and stops** instead of carrying it out (verified)
+— fail loud rather than risk dropping a resource the metastore relies on. It leaves
+imports, creates, and in-place updates unaffected. Keep it on as a standing guard; flip a
+single type off only when you deliberately intend to destroy/replace:
 
 ```bash
-# lift the guard across all resource types
+# one prevent_destroy line per type file (8 total); flip the whole set if needed
 sed -i '' 's/prevent_destroy = true/prevent_destroy = false/' terraform/*.tf
 ```
 
+Scope note: `prevent_destroy` blocks destroys/replaces, **not** in-place updates — an
+authoritative `databricks_grants` revoke or an `owner` change is an update, so the
+`0 to change` plan review is what guards those. For enforcement against updates too
+(e.g. on HCP Terraform), add a policy that denies any run whose plan contains a
+create/update/delete/replace.
+
 ---
 
-## 7. Scaling — data-driven model
+## 7. The `import_id` gate & lifecycle
 
-Every object type is a single `for_each` resource fed by a map in `terraform.tfvars`.
-Adding an object is a one-line map edit, not new HCL; its import block (and import ID)
-come from the same key. Map keys:
+Importing is controlled **per object** by the optional `import_id` field on each map
+entry — not by editing `imports.tf` (which stays in the repo permanently):
+
+- **`import_id` set** → the object is **imported** using that ID (adopt existing).
+- **`import_id` unset** → the object is **created** on apply (brand-new object).
+
+This lets existing and new objects live in the same config, and supports incremental
+migration (populate `import_id` on the batch you're adopting now). The validated flow:
+
+1. **Adopt an existing object** — add its map entry **with** `import_id`; `plan` shows
+   `1 to import, 0 change`; `apply` imports it into state.
+2. **Steady state** — `plan` shows `No changes` (whether you keep or drop the
+   `import_id`; the import is idempotent, so removing it is optional hygiene — do it only
+   *after* the object is confirmed in state).
+3. **Add a new object** — add a map entry **without** `import_id`; `plan` shows
+   `1 to add`; `apply` creates it.
+
+> Removing an `import_id` before the object is in state (or if state is lost/rebuilt)
+> makes Terraform plan to **create** it — which against an existing object is the
+> dangerous case. Only drop `import_id` after a confirmed apply, and keep state remote
+> (e.g. HCP) and backed up.
+
+---
+
+## 8. Scaling — data-driven model
+
+Every object type is a single `for_each` resource fed by a per-type `*.auto.tfvars`
+map. Adding an object is a one-line map edit, not new HCL. Splitting by type keeps each
+file small and lets different owners maintain different files; Terraform merges them.
+Map keys:
 
 - `catalogs` — catalog name
 - `schemas` — `catalog.schema`
 - `volumes` — `catalog.schema.volume`
 - `storage_credentials`, `external_locations`, `connections` — name
 - `workspace_bindings` — one entry per (securable, workspace)
-- `grants` — `<securable_type>/<full_name>` (also the import ID)
+- `grants` — `<securable_type>/<full_name>`
 
-Generate the map entries from the §4 inventory with a script over the CLI/SDK JSON.
-Each entry you add appears in the plan's import set; keep `grants` entries complete per
-securable so the plan stays a clean no-op.
+Generate the entries from the §4 inventory with a script over the CLI/SDK JSON. Keep
+`grants` entries complete per securable so the plan stays clean.
 
 ---
 
-## 8. Safety & publishing
+## 9. Safety & publishing
 
-- **Never commit:** state, real `*.tfvars`, `.databrickscfg`, secrets, raw discovery
+- **Never commit:** state, real `*.auto.tfvars`, `.databrickscfg`, secrets, raw discovery
   output (JSON with real identifiers). `.gitignore` enforces this.
-- Commit only `*.tfvars.example` and sanitized identifiers.
+- Commit only `*.auto.tfvars.example` and sanitized identifiers.
 - Before publishing, scrub metastore/workspace IDs, bucket paths, IdP group names,
   connection hosts/tokens.
+- Treat `apply` of authoritative grants like a production access change — review the
+  plan, apply during a change window.

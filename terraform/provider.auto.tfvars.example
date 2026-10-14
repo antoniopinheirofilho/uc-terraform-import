@@ -1,0 +1,5 @@
+# Provider / connection settings. Copy to provider.auto.tfvars (gitignored).
+# *.auto.tfvars files are loaded automatically by Terraform.
+
+databricks_workspace_host = "https://dbc-xxxxxxxx-xxxx.cloud.databricks.com"
+# databricks_workspace_profile = "my-workspace-profile"   # or use environment auth (service principal)

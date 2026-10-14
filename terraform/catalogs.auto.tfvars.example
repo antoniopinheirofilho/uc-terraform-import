@@ -1,0 +1,13 @@
+# Catalogs. Copy to catalogs.auto.tfvars (gitignored). One entry per catalog.
+#   import_id set   => import the existing catalog (import_id = catalog name).
+#   import_id unset => the catalog would be created (not imported).
+
+catalogs = {
+  "my_catalog" = {
+    owner        = "owner@example.com"
+    comment      = "example catalog"
+    storage_root = "s3://my-managed-bucket/uc/<account-id>/<metastore-id>" # or omit
+    # isolation_mode = "ISOLATED"
+    import_id = "my_catalog"
+  }
+}
