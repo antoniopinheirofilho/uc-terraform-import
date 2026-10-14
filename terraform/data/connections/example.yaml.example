@@ -1,0 +1,12 @@
+# Copy to a real *.yaml file here. Key = connection name.
+#   import_id = "<metastore_id>|<name>"  (metastore_id from `databricks metastores summary`).
+# Secrets (e.g. bearer_token) are NOT stored here.
+my_conn:
+  connection_type: HTTP
+  owner: owner@example.com
+  options:
+    auth_scheme: bearer
+    host: https://api.example.com
+    port: "443"
+    base_path: /
+  import_id: 00000000-0000-0000-0000-000000000000|my_conn

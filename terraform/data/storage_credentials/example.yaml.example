@@ -1,0 +1,5 @@
+# Copy to a real *.yaml file here. Key = storage credential name. import_id = name.
+my_sc:
+  owner: owner@example.com
+  role_arn: arn:aws:iam::<account>:role/<uc-role>
+  import_id: my_sc

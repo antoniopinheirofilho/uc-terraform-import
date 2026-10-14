@@ -1,0 +1,10 @@
+# Copy to a real *.yaml file in this folder (e.g. finance.yaml). gitignored.
+# Each top-level key is a catalog name; all *.yaml files in this folder are merged.
+#   import_id present  => import the existing catalog (= catalog name)
+#   import_id omitted  => the catalog is created on apply
+my_catalog:
+  owner: owner@example.com
+  comment: example catalog
+  storage_root: s3://my-managed-bucket/uc/<account-id>/<metastore-id>   # or omit
+  # isolation_mode: ISOLATED
+  import_id: my_catalog

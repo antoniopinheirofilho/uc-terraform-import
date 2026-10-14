@@ -1,0 +1,5 @@
+# Copy to a real *.yaml file here. Key = "catalog.schema.volume".
+my_catalog.my_schema.my_volume:
+  owner: owner@example.com
+  comment: example volume
+  import_id: my_catalog.my_schema.my_volume

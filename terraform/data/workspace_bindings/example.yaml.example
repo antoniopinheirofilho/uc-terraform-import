@@ -1,0 +1,8 @@
+# Copy to a real *.yaml file here. Bindings for ISOLATED securables.
+# Set isolation_mode: ISOLATED on the securable, then list its bound workspaces.
+#   import_id = "<securable_type>|<securable_name>|<workspace_id>".
+my_catalog->ws1:
+  securable_type: catalog
+  securable_name: my_catalog
+  workspace_id: "1234567890123456"
+  import_id: catalog|my_catalog|1234567890123456

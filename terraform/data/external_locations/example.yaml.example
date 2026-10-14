@@ -1,0 +1,6 @@
+# Copy to a real *.yaml file here. Key = external location name. import_id = name.
+my_el:
+  owner: owner@example.com
+  url: s3://my-bucket/path
+  credential_name: my_sc
+  import_id: my_el

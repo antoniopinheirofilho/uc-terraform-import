@@ -21,6 +21,11 @@ override.tf.json
 *.tfplan
 *.plan
 
+# YAML object inventory (real data may contain customer identifiers).
+# Commit only *.yaml.example templates.
+terraform/data/**/*.yaml
+!terraform/data/**/*.yaml.example
+
 # ---- Credentials / secrets ----
 .databrickscfg
 *.pem

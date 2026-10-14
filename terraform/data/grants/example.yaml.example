@@ -1,0 +1,14 @@
+# Copy to a real *.yaml file here. Key = "<securable_type>/<full_name>".
+#   import_id = the same string as the key.
+# List EVERY live privilege on the securable — databricks_grants is authoritative and
+# revokes anything not listed (system defaults + implicit creator grants included).
+catalog/my_catalog:
+  grants:
+    - principal: my_group
+      privileges: [USE_CATALOG, USE_SCHEMA, SELECT]
+  import_id: catalog/my_catalog
+metastore/00000000-0000-0000-0000-000000000000:
+  grants:
+    - principal: account users
+      privileges: [USE_MARKETPLACE_ASSETS]
+  import_id: metastore/00000000-0000-0000-0000-000000000000
