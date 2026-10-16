@@ -1,5 +1,17 @@
-# Provider / connection settings. Copy to provider.auto.tfvars (gitignored).
-# *.auto.tfvars files are loaded automatically by Terraform.
+# Workspace connections. Copy to provider.auto.tfvars (gitignored; *.auto.tfvars are
+# loaded automatically). One entry per workspace you route through — the key must match
+# a provider alias in providers.tf and a module instance in main.tf. "primary" is the
+# default/only one for a single-workspace setup.
 
-databricks_workspace_host = "https://dbc-xxxxxxxx-xxxx.cloud.databricks.com"
-# databricks_workspace_profile = "my-workspace-profile"   # or use environment auth (service principal)
+workspace_connections = {
+  primary = {
+    host = "https://dbc-xxxxxxxx-xxxx.cloud.databricks.com"
+    # profile = "my-workspace-profile"   # omit to use environment auth (service principal)
+  }
+
+  # Add one per additional workspace (for catalogs isolated to it):
+  # secondary = {
+  #   host    = "https://dbc-yyyyyyyy-yyyy.cloud.databricks.com"
+  #   profile = "my-other-workspace-profile"
+  # }
+}

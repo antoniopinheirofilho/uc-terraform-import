@@ -1,14 +1,16 @@
-# Root inputs: provider/connection only. The object inventory is NOT passed as
-# variables — it is read from the YAML data tree (see data.tf). Supply these two via
-# provider.auto.tfvars (auto-loaded) or environment auth.
+# Root inputs: workspace connections only. The object inventory is NOT passed as
+# variables — it is read from the YAML data tree (see data.tf).
+#
+# One Terraform state can manage a whole metastore even when catalogs are ISOLATED to
+# different workspaces: declare one connection per workspace you route through, and the
+# matching provider alias + module instance (providers.tf / main.tf) manage the objects
+# that workspace can reach. `primary` is the default/only connection for the common
+# single-workspace case.
 
-variable "databricks_workspace_host" {
-  description = "Workspace URL (a workspace assigned to the target metastore)."
-  type        = string
-}
-
-variable "databricks_workspace_profile" {
-  description = "CLI profile for workspace-level auth (local dev). Null => environment auth."
-  type        = string
-  default     = null
+variable "workspace_connections" {
+  description = "Databricks workspace connections keyed by routing name (e.g. \"primary\"). host = workspace URL; profile = local-dev CLI profile (null => environment auth / service principal)."
+  type = map(object({
+    host    = string
+    profile = optional(string)
+  }))
 }

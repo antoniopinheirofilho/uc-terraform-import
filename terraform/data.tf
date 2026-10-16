@@ -1,51 +1,28 @@
-# Read the YAML data tree. Each resource type is a folder under data/; every *.yaml
-# file in it is a map of entries (one or many per file — organize by domain/team as you
-# like). All files in a folder are merged into one map. Add an object = add/extend a
-# YAML file; no HCL changes. The merged maps are passed to the typed `uc` module
-# (main.tf), where the type constraints validate them.
+# Read the YAML data tree, keyed by workspace routing name:
 #
-# The leading {} seeds merge() so an empty folder yields {} instead of an error.
+#   data/<workspace>/<type>/*.yaml
+#
+# e.g. data/primary/catalogs/finance.yaml. Each <type> folder may hold one or many
+# YAML files; all files in a folder are merged into one map. Add an object = add/extend
+# a YAML file under the right workspace+type folder; no HCL changes.
+#
+# local.inventory[<workspace>][<type>] is the merged map for that workspace+type, passed
+# to that workspace's module instance (main.tf), where the typed module variables
+# validate the decoded data. The leading {} seeds merge() so an empty folder yields {}.
 
 locals {
-  _data = "${path.module}/data"
+  _data  = "${path.module}/data"
+  _types = ["catalogs", "schemas", "volumes", "storage_credentials", "external_locations", "connections", "workspace_bindings", "grants"]
 
-  catalogs = merge(concat([{}], [
-    for f in fileset("${local._data}/catalogs", "*.yaml") :
-    yamldecode(file("${local._data}/catalogs/${f}"))
-  ])...)
+  # Routing workspaces = top-level folders under data/ that contain real *.yaml files.
+  _workspaces = toset([for p in fileset(local._data, "*/*/*.yaml") : split("/", p)[0]])
 
-  schemas = merge(concat([{}], [
-    for f in fileset("${local._data}/schemas", "*.yaml") :
-    yamldecode(file("${local._data}/schemas/${f}"))
-  ])...)
-
-  volumes = merge(concat([{}], [
-    for f in fileset("${local._data}/volumes", "*.yaml") :
-    yamldecode(file("${local._data}/volumes/${f}"))
-  ])...)
-
-  storage_credentials = merge(concat([{}], [
-    for f in fileset("${local._data}/storage_credentials", "*.yaml") :
-    yamldecode(file("${local._data}/storage_credentials/${f}"))
-  ])...)
-
-  external_locations = merge(concat([{}], [
-    for f in fileset("${local._data}/external_locations", "*.yaml") :
-    yamldecode(file("${local._data}/external_locations/${f}"))
-  ])...)
-
-  connections = merge(concat([{}], [
-    for f in fileset("${local._data}/connections", "*.yaml") :
-    yamldecode(file("${local._data}/connections/${f}"))
-  ])...)
-
-  workspace_bindings = merge(concat([{}], [
-    for f in fileset("${local._data}/workspace_bindings", "*.yaml") :
-    yamldecode(file("${local._data}/workspace_bindings/${f}"))
-  ])...)
-
-  grants = merge(concat([{}], [
-    for f in fileset("${local._data}/grants", "*.yaml") :
-    yamldecode(file("${local._data}/grants/${f}"))
-  ])...)
+  inventory = {
+    for ws in local._workspaces : ws => {
+      for t in local._types : t => merge(concat([{}], [
+        for f in fileset("${local._data}/${ws}/${t}", "*.yaml") :
+        yamldecode(file("${local._data}/${ws}/${t}/${f}"))
+      ])...)
+    }
+  }
 }

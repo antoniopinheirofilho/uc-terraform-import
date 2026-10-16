@@ -14,9 +14,14 @@ Plan: N to import, 0 to add, 0 to change, 0 to destroy.
 `apply` only writes once you've reviewed that plan.
 
 - Databricks-side only — AWS/cloud resources are assumed to already exist.
-- The object inventory is a **YAML data tree** (`data/<type>/*.yaml`), read via
-  `fileset()`+`yamldecode()` and passed through a **typed module** so the data is
+- The object inventory is a **YAML data tree** (`data/<workspace>/<type>/*.yaml`), read
+  via `fileset()`+`yamldecode()` and passed through a **typed module** so the data is
   validated. See [§5](#5-build-the-data-tree).
+- **One state manages the whole metastore, even with workspace-catalog bindings.** UC
+  management APIs run through a workspace, and bindings gate what each workspace can
+  see — so you declare one provider alias + module instance per workspace you route
+  through, all in a single state. For a single-workspace metastore that's just
+  `primary`. See [§6](#6-plan-then-apply).
 - Grants are **authoritative**: a `databricks_grants` block is a complete snapshot of a
   securable's grants, so an incomplete snapshot shows up in the plan as a change (and on
   apply would revoke).
@@ -59,11 +64,13 @@ Plan: N to import, 0 to add, 0 to change, 0 to destroy.
   own workspace's objects and must inventory per-workspace ([§4](#4-discover-the-inventory-apicli)).
 
 ### Assumptions
-- **Metastore admin + workspace-level OAuth** (no account admin required).
-- The target metastore and the workspace you connect to already exist and are assigned.
-- The workspace you point the provider at can access all in-scope catalogs (they are
-  OPEN, or bound to it). Catalogs **isolated to other workspaces** are handled in a
-  separate run pointed at a bound workspace — see [§6](#6-plan-then-apply).
+- **Metastore admin + workspace-level OAuth** (no account admin required). The same
+  principal is used for every workspace alias; it must be entitled into each workspace
+  it routes through.
+- The target metastore and the workspace(s) you connect to already exist and are assigned.
+- Each in-scope catalog is reachable from the workspace alias that manages it — OPEN
+  catalogs from any assigned workspace, ISOLATED catalogs from a workspace they're bound
+  to. One state spans all of them via multiple aliases — see [§6](#6-plan-then-apply).
 - Terraform **≥ 1.7**, Databricks provider **≥ 1.59**.
 
 ---
@@ -97,10 +104,10 @@ assignments are out of scope in this version.
 databricks auth login --host https://<workspace-host> --profile my-workspace
 ```
 
-Copy `provider.auto.tfvars.example` to `provider.auto.tfvars` and set
-`databricks_workspace_host` / `databricks_workspace_profile`. For HCP/CI, leave the
-profile null and use a service principal: `DATABRICKS_CLIENT_ID` /
-`DATABRICKS_CLIENT_SECRET`.
+Copy `provider.auto.tfvars.example` to `provider.auto.tfvars` and fill in
+`workspace_connections` (one entry per workspace you route through; `primary` for a
+single-workspace setup). For HCP/CI, omit `profile` and use a service principal:
+`DATABRICKS_CLIENT_ID` / `DATABRICKS_CLIENT_SECRET`.
 
 You'll also need the **metastore ID** to build connection and metastore-grant import IDs:
 
@@ -114,26 +121,35 @@ databricks metastores summary -p my-workspace -o json   # returns metastore_id, 
 
 ```
 terraform/
-├── versions.tf  providers.tf  variables.tf   # root: requirements + provider + 2 provider vars
-├── data.tf                                   # root: reads data/<type>/*.yaml (fileset+yamldecode)
-├── main.tf                                    # root: passes the maps into the typed module
-├── imports.tf                                 # root: import blocks → module resources (import_id gate)
-├── provider.auto.tfvars.example               # host/profile template
+├── versions.tf  variables.tf                  # root: requirements + workspace_connections var
+├── providers.tf                               # root: one provider alias per workspace (primary + commented template)
+├── data.tf                                    # root: reads data/<workspace>/<type>/*.yaml (fileset+yamldecode)
+├── main.tf                                     # root: one module instance per workspace
+├── imports.tf                                  # root: import blocks per workspace (import_id gate)
+├── provider.auto.tfvars.example               # workspace_connections template
 ├── data/                                      # THE INVENTORY (YAML), gitignored; *.yaml.example committed
-│   ├── catalogs/   schemas/   volumes/
-│   ├── storage_credentials/   external_locations/   connections/
-│   └── workspace_bindings/   grants/
-└── modules/uc/                                # typed resources (one for_each resource per type)
+│   └── primary/                               # one folder per workspace routing key
+│       ├── catalogs/   schemas/   volumes/
+│       ├── storage_credentials/   external_locations/   connections/
+│       └── workspace_bindings/   grants/
+└── modules/uc/                                # typed resources (one for_each resource per type), reused per workspace
     ├── versions.tf  variables.tf  locals.tf
     └── catalogs.tf schemas.tf volumes.tf storage_credentials.tf
         external_locations.tf connections.tf bindings.tf grants.tf
 ```
 
-**How it fits together:** `data.tf` reads every `*.yaml` under each `data/<type>/`
-folder and merges them into one map per type; `main.tf` passes those maps into
-`modules/uc`, whose typed `variable`s validate the decoded data; `imports.tf` (root)
-imports the entries that declare an `import_id`, targeting the module's resources.
-Backend ships unset (local state).
+**How it fits together:** `data.tf` reads every `*.yaml` under `data/<workspace>/<type>/`
+and merges them into one map per workspace+type; `main.tf` passes each workspace's maps
+into its own `modules/uc` instance (routed via that workspace's provider alias), whose
+typed `variable`s validate the decoded data; `imports.tf` imports the entries that
+declare an `import_id`. All instances share **one state**. Backend ships unset (local
+state).
+
+**Adding a workspace** (only needed for catalogs ISOLATED to another workspace): copy
+the provider block in `providers.tf`, the module block in `main.tf`, and the import
+blocks in `imports.tf` (all have a commented `secondary` template), add a
+`workspace_connections` entry, and put that workspace's YAML under `data/<alias>/`.
+This per-workspace wiring is static because Terraform can't `for_each` over providers.
 
 ---
 
@@ -198,12 +214,15 @@ Every object must end up either in the YAML tree or consciously excluded.
 
 ## 5. Build the data tree
 
-For each object, add an entry to a `*.yaml` file under the matching `data/<type>/`
-folder (copy the `example.yaml.example` in each folder to start). A file holds one or
+For each object, add an entry to a `*.yaml` file under
+`data/<workspace>/<type>/` — where `<workspace>` is the routing key that can reach it
+(`primary` for the single-workspace case; a bound workspace's key for an isolated
+catalog). Copy the `example.yaml.example` in each folder to start. A file holds one or
 many entries, and all files in a folder are merged — so you can split by domain/team
-(e.g. `data/catalogs/finance.yaml`, `data/catalogs/hr.yaml`). The top-level key of each
-entry is the object identifier; **set `import_id` to adopt an existing object** (see the
-table). Then apply these corrections (each is needed for a clean no-op plan):
+(e.g. `data/primary/catalogs/finance.yaml`, `data/primary/catalogs/hr.yaml`). The
+top-level key of each entry is the object identifier; **set `import_id` to adopt an
+existing object** (see the table). Then apply these corrections (each is needed for a
+clean no-op plan):
 
 1. **Complete every grants entry.** List all live privileges per securable — system
    defaults (e.g. `account users → USE_MARKETPLACE_ASSETS`) and implicit creator
@@ -263,13 +282,15 @@ Once the plan is import-only and reviewed/approved, adopt the objects into state
 terraform apply       # imports only; 0 changes to Databricks
 ```
 
-**Isolated catalogs & the provider workspace.** `plan` reads every object through the
-single workspace the provider points at, so a catalog (or its schemas/volumes/grants)
-`ISOLATED` to a *different* workspace fails the whole plan with `cannot read catalog:
-Catalog '<name>' is not accessible in current workspace` (verified). Point the provider
-at a workspace that can access the catalog — and for a metastore with isolated catalogs
-spread across workspaces, run the config once per bound workspace (its own
-`provider.auto.tfvars` + state).
+**Isolated catalogs — one state, multiple aliases.** Each module instance reads through
+its workspace alias, so an object `ISOLATED` to a workspace must be placed under that
+workspace's `data/<alias>/` folder and managed by that alias's module instance.
+Routing it through a workspace that can't see it fails the plan with `cannot read
+catalog: Catalog '<name>' is not accessible in current workspace`. OPEN catalogs can go
+under any alias (they're visible from every assigned workspace). All aliases share one
+state, so the whole metastore is still managed from a single `terraform apply`.
+(Verified end-to-end: one state importing an OPEN catalog via `primary` and a catalog
+isolated to another workspace via `secondary`, together, clean.)
 
 ### Guardrail: `prevent_destroy`
 
@@ -320,14 +341,18 @@ migration (populate `import_id` on the batch you're adopting now). The validated
 ## 8. Scaling
 
 The YAML data tree scales to hundreds/thousands of objects: one entry per object, files
-grouped by domain/team under each `data/<type>/` folder, discovered automatically by
-`fileset()` (no per-file wiring). Validation is preserved because the decoded data flows
-through the typed `modules/uc` variables. Generate the YAML from the §4 inventory with a
-script over the CLI/SDK JSON.
+grouped by domain/team under each `data/<workspace>/<type>/` folder, discovered
+automatically by `fileset()` (no per-file wiring). Validation is preserved because the
+decoded data flows through the typed `modules/uc` variables. Generate the YAML from the
+§4 inventory with a script over the CLI/SDK JSON.
 
-For a very large estate, also segment **state** by bounded context — e.g. a root per
-business unit or catalog group, each reusing `modules/uc` with its own `data/` tree and
-backend. That keeps plans small and bounds blast radius; it does not change the module.
+Workspaces add a second axis: one provider alias + module instance per workspace, all in
+**one state** (§6). Adding a workspace is a small static copy (providers/main/imports);
+the per-object inventory stays data-driven.
+
+For a very large estate, you can instead segment **state** by bounded context — e.g. a
+root per business unit, each reusing `modules/uc` with its own `data/` tree and backend.
+That keeps plans small and bounds blast radius; it does not change the module.
 
 ---
 
