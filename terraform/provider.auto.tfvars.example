@@ -1,17 +1,26 @@
 # Workspace connections. Copy to provider.auto.tfvars (gitignored; *.auto.tfvars are
-# loaded automatically). One entry per workspace you route through — the key must match
-# a provider alias in providers.tf and a module instance in main.tf. "primary" is the
-# default/only one for a single-workspace setup.
+# loaded automatically). One entry per environment/workspace you route through — each
+# key must match an env_<key>.tf file and a data/<key>/ folder.
+#
+# This example shows four workspaces attached to the SAME metastore (dev/sit/stg/prod),
+# catalogs bound per environment, all managed in one state. If your estate has fewer
+# environments, delete the ones you don't use (the entry here + env_<key>.tf + data/<key>/).
 
 workspace_connections = {
-  primary = {
-    host = "https://dbc-xxxxxxxx-xxxx.cloud.databricks.com"
-    # profile = "my-workspace-profile"   # omit to use environment auth (service principal)
+  dev = {
+    host    = "https://dbc-dev-xxxx.cloud.databricks.com"
+    profile = "my-dev-workspace-profile" # omit to use environment auth (service principal)
   }
-
-  # Add one per additional workspace (for catalogs isolated to it):
-  # secondary = {
-  #   host    = "https://dbc-yyyyyyyy-yyyy.cloud.databricks.com"
-  #   profile = "my-other-workspace-profile"
-  # }
+  sit = {
+    host    = "https://dbc-sit-xxxx.cloud.databricks.com"
+    profile = "my-sit-workspace-profile"
+  }
+  stg = {
+    host    = "https://dbc-stg-xxxx.cloud.databricks.com"
+    profile = "my-stg-workspace-profile"
+  }
+  prod = {
+    host    = "https://dbc-prod-xxxx.cloud.databricks.com"
+    profile = "my-prod-workspace-profile"
+  }
 }
