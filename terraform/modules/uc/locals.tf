@@ -22,12 +22,23 @@ locals {
     }
   }
 
-  # "<securable_type>/<full_name>" -> type + securable (key is also the import ID)
+  # "<securable_type>/<full_name>" -> type + securable (key is also the import ID).
+  # Each grant's effective privileges are resolved here: raw `privileges` pass through;
+  # `access` aliases expand to the union of their privilege lists FOR THIS securable
+  # type (unknown alias or unsupported type -> empty, caught by the grants precondition).
   grants = {
     for k, v in var.grants : k => {
       securable_type = split("/", k)[0]
       securable      = trimprefix(k, "${split("/", k)[0]}/")
-      grants         = v.grants
+      grants = [
+        for g in v.grants : {
+          principal = g.principal
+          privileges = g.privileges != null ? g.privileges : sort(distinct(flatten([
+            for a in coalesce(g.access, []) :
+            lookup(lookup(var.access_profiles, a, {}), split("/", k)[0], [])
+          ])))
+        }
+      ]
     }
   }
 }

@@ -8,6 +8,7 @@ module "uc_primary" {
   source    = "./modules/uc"
   providers = { databricks = databricks.primary }
 
+  access_profiles     = local.access_profiles
   catalogs            = try(local.inventory["primary"].catalogs, {})
   schemas             = try(local.inventory["primary"].schemas, {})
   volumes             = try(local.inventory["primary"].volumes, {})
@@ -24,6 +25,7 @@ module "uc_primary" {
 #   source    = "./modules/uc"
 #   providers = { databricks = databricks.secondary }
 #
+#   access_profiles     = local.access_profiles
 #   catalogs            = try(local.inventory["secondary"].catalogs, {})
 #   schemas             = try(local.inventory["secondary"].schemas, {})
 #   volumes             = try(local.inventory["secondary"].volumes, {})

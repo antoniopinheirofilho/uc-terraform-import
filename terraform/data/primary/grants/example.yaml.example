@@ -1,12 +1,24 @@
-# Copy to a real *.yaml file here. Key = "<securable_type>/<full_name>".
+# Authoritative grants. Copy to a real *.yaml file here. Key = "<securable_type>/<full_name>".
 #   import_id = the same string as the key.
-# List EVERY live privilege on the securable — databricks_grants is authoritative and
-# revokes anything not listed (system defaults + implicit creator grants included).
+#
+# databricks_grants is authoritative: list EVERY live privilege on the securable, or the
+# plan will show a change (and apply would revoke). Each grant sets EITHER:
+#   - access:     one or more access-profile aliases (see ../../../access_profiles.tf),
+#                 resolved to privileges for this securable type. PREFERRED going forward.
+#   - privileges: raw UC privileges. The escape hatch for existing grants that don't fit
+#                 a profile. Use when importing, then migrate to `access` where possible.
+# Exactly one of access / privileges per grant — not both.
+
+# Profile-based (preferred) — readable, governed:
 catalog/my_catalog:
   grants:
-    - principal: my_group
-      privileges: [USE_CATALOG, USE_SCHEMA, SELECT]
+    - principal: data_engineers
+      access: [WRITE_ACCESS]
+    - principal: analysts
+      access: [READ_ACCESS]
   import_id: catalog/my_catalog
+
+# Raw privileges (escape hatch) — e.g. a metastore grant that fits no profile:
 metastore/00000000-0000-0000-0000-000000000000:
   grants:
     - principal: account users

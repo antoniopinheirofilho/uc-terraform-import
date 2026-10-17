@@ -40,6 +40,9 @@ Plan: N to import, 0 to add, 0 to change, 0 to destroy.
   the root and passed through a typed module whose `variable` type constraints validate
   it (missing/mistyped/unknown fields fail the plan). Scales to many files/objects.
 - **Authoritative grants** per securable (`databricks_grants`), with `owner` captured.
+- **Access profiles** — named, securable-type-aware privilege bundles (e.g.
+  `READ_ACCESS`) so grant YAML references a profile instead of raw UC privileges. See
+  [§5.1](#51-access-profiles-grant-aliases).
 - **Isolated securables** via `isolation_mode` + `databricks_workspace_binding`.
 - **AWS** storage credentials (IAM role, self-assuming UC role pattern).
 - **`prevent_destroy` guard** on every resource — a destroy/replace fails the plan loud.
@@ -123,6 +126,7 @@ databricks metastores summary -p my-workspace -o json   # returns metastore_id, 
 terraform/
 ├── versions.tf  variables.tf                  # root: requirements + workspace_connections var
 ├── providers.tf                               # root: one provider alias per workspace (primary + commented template)
+├── access_profiles.tf                          # root: named privilege bundles for grants (governance vocabulary)
 ├── data.tf                                    # root: reads data/<workspace>/<type>/*.yaml (fileset+yamldecode)
 ├── main.tf                                     # root: one module instance per workspace
 ├── imports.tf                                  # root: import blocks per workspace (import_id gate)
@@ -253,6 +257,62 @@ clean no-op plan):
 
 The typed module validates every entry; `imports.tf` uses each entry's `import_id`
 verbatim.
+
+### 5.1 Access profiles (grant aliases)
+
+Instead of repeating raw UC privileges in every grant, a grant can reference a named
+**access profile**. This keeps the YAML readable and stops privilege sets being
+copy-pasted without understanding what they contain.
+
+**The registry — `access_profiles.tf`** (root, committed, governed vocabulary). Each
+profile is **securable-type-aware**: it maps a securable type to the privileges that
+mean "read"/"write"/etc. *for that type* (read on a catalog ≠ read on a volume):
+
+```hcl
+locals {
+  access_profiles = {
+    READ_ACCESS = {
+      catalog           = ["USE_CATALOG", "USE_SCHEMA", "SELECT"]
+      schema            = ["USE_SCHEMA", "SELECT"]
+      volume            = ["READ_VOLUME"]
+      external_location = ["READ_FILES"]
+    }
+    WRITE_ACCESS = { ... }
+  }
+}
+```
+
+**Using it in grant YAML.** Each grant sets **exactly one** of `access` (profile
+aliases) or `privileges` (raw) — not both, not neither:
+
+```yaml
+catalog/finance:
+  grants:
+    - principal: data_engineers
+      access: [WRITE_ACCESS]          # preferred: resolved to WRITE_ACCESS.catalog
+    - principal: analysts
+      access: [READ_ACCESS]
+  import_id: catalog/finance
+
+metastore/<metastore_id>:
+  grants:
+    - principal: account users
+      privileges: [USE_MARKETPLACE_ASSETS]   # raw escape hatch — fits no profile
+  import_id: metastore/<metastore_id>
+```
+
+- `access` resolves to the union of each profile's privileges **for that securable's
+  type**; multiple profiles are allowed (`access: [READ_ACCESS, SHARE_ACCESS]`).
+- **`privileges` (raw) is the escape hatch** for existing grants that don't match a
+  profile — use it to reach a clean import no-op, then migrate to `access` where it
+  fits. Remember grants are authoritative, so the resolved set must equal the live set.
+- **Fail-loud validation:** an undefined profile, a profile with no entry for the
+  securable's type, or an empty set **fails the plan** (resource precondition) — a typo
+  never silently grants nothing. Setting both `access` and `privileges` fails variable
+  validation.
+
+To add a capability, edit `access_profiles.tf` (one reviewed change) rather than every
+grant entry.
 
 ---
 
