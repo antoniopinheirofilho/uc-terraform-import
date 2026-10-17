@@ -126,13 +126,14 @@ databricks metastores summary -p my-workspace -o json   # returns metastore_id, 
 ```
 terraform/
 ├── versions.tf  variables.tf                  # root: requirements + workspace_connections var
+├── providers.tf                               # root: one provider alias per environment (dev/sit/stg/prod)
+├── main.tf                                     # root: one modules/uc instance per environment
+├── imports.tf                                  # root: import blocks per environment (import_id gate)
 ├── access_profiles.tf                          # root: named privilege bundles for grants (governance vocabulary)
 ├── data.tf                                    # root: reads data/<env>/<type>/*.yaml; builds inventory + import maps
-├── env_dev.tf  env_sit.tf  env_stg.tf  env_prod.tf   # root: ONE file per environment —
-│                                              #   its provider alias + module instance + import blocks
 ├── provider.auto.tfvars.example               # workspace_connections template (dev/sit/stg/prod)
 ├── data/                                      # THE INVENTORY (YAML), gitignored; *.yaml.example committed
-│   ├── dev/                                   # one folder per environment (= env_<env>.tf + connection key)
+│   ├── dev/                                   # one folder per environment (= a provider alias + connection key)
 │   │   ├── catalogs/   schemas/   volumes/
 │   │   ├── storage_credentials/   external_locations/   connections/
 │   │   └── workspace_bindings/   grants/
@@ -145,17 +146,17 @@ terraform/
 
 **How it fits together:** `data.tf` reads every `*.yaml` under `data/<env>/<type>/` and
 merges them into one map per env+type (`local.inventory`), plus a per-env import map
-(`local._import`). Each `env_<env>.tf` is self-contained — it declares that
-environment's provider alias, passes its slice of the inventory into its own
-`modules/uc` instance (routed through that alias), and holds that env's import blocks.
-The typed module `variable`s validate the decoded data. All environments share **one
+(`local._import`). `providers.tf` declares one provider alias per environment; `main.tf`
+passes each environment's slice of the inventory into its own `modules/uc` instance
+(routed through that alias); `imports.tf` holds each environment's import blocks. The
+typed module `variable`s validate the decoded data. All environments share **one
 state**. Backend ships unset (local state).
 
-**Adding or removing an environment:** copy an `env_<env>.tf` and swap the name (or
-delete one), add/remove its `workspace_connections` entry and its `data/<env>/` folder.
-Everything about one environment lives in its single `env_<env>.tf`. This per-env wiring
-is static because Terraform can't `for_each` over providers; the object inventory itself
-stays data-driven (YAML, no HCL edits).
+**Adding or removing an environment:** add (or delete) a provider block in
+`providers.tf`, a module instance in `main.tf`, and its import blocks in `imports.tf`,
+plus a `workspace_connections` entry and a `data/<env>/` folder. This per-environment
+wiring is static because Terraform can't `for_each` over providers; the object inventory
+itself stays data-driven (YAML, no HCL edits).
 
 ---
 
@@ -257,7 +258,7 @@ corrections (each is needed for a clean no-op plan):
 | workspace binding | `<securable_type>\|<securable_name>\|<workspace_id>` |
 | grants | `<securable_type>/<full_name>` (= the entry's key) |
 
-The typed module validates every entry; the import blocks in `env_<env>.tf` use each
+The typed module validates every entry; the import blocks in `imports.tf` use each
 entry's `import_id` verbatim.
 
 ### 5.1 Access profiles (grant aliases)
@@ -344,8 +345,8 @@ Once the plan is import-only and reviewed/approved, adopt the objects into state
 terraform apply       # imports only; 0 changes to Databricks
 ```
 
-**Isolated catalogs — one state, multiple environments.** Each `env_<env>.tf` module
-instance reads through its own workspace alias, so an object `ISOLATED` to a workspace
+**Isolated catalogs — one state, multiple environments.** Each `main.tf` module
+instance reads through its own workspace alias (`providers.tf`), so an object `ISOLATED` to a workspace
 must be placed under that environment's `data/<env>/` folder and is managed by that
 environment's module instance. Routing it through a workspace that can't see it fails
 the plan with `cannot read catalog: Catalog '<name>' is not accessible in current
@@ -379,7 +380,7 @@ create/update/delete/replace.
 ## 7. The `import_id` gate & lifecycle
 
 Importing is controlled **per object** by the optional `import_id` field in each YAML
-entry — not by editing the import blocks (they stay in each `env_<env>.tf` permanently):
+entry — not by editing the import blocks (they stay in `imports.tf` permanently):
 
 - **`import_id` set** → the object is **imported** using that ID (adopt existing).
 - **`import_id` unset** → the object is **created** on apply (brand-new object).
@@ -409,9 +410,10 @@ by `fileset()` (no per-file wiring). Validation is preserved because the decoded
 flows through the typed `modules/uc` variables. Generate the YAML from the §4 inventory
 with a script over the CLI/SDK JSON.
 
-Environments add a second axis: one `env_<env>.tf` (provider alias + module instance +
-import blocks) per workspace, all in **one state** (§6). Adding an environment is a small
-static copy of one file; the per-object inventory stays data-driven.
+Environments add a second axis: a provider alias (`providers.tf`) + module instance
+(`main.tf`) + import blocks (`imports.tf`) per workspace, all in **one state** (§6).
+Adding an environment is a small static edit to those three files; the per-object
+inventory stays data-driven.
 
 For a very large estate, you can instead segment **state** by bounded context — e.g. a
 root per business unit, each reusing `modules/uc` with its own `data/` tree and backend.
