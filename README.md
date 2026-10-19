@@ -41,8 +41,9 @@ Plan: N to import, 0 to add, 0 to change, 0 to destroy.
   the root and passed through a typed module whose `variable` type constraints validate
   it (missing/mistyped/unknown fields fail the plan). Scales to many files/objects.
 - **Authoritative grants** per securable (`databricks_grants`), with `owner` captured.
-- **Access profiles** — named, securable-type-aware privilege bundles (e.g.
-  `READ_ACCESS`) so grant YAML references a profile instead of raw UC privileges. See
+- **Access profiles** — named, securable-type-aware privilege bundles (`DATA_READER` /
+  `DATA_EDITOR`, mirroring the Catalog Explorer "Privilege presets") so grant YAML
+  references a profile instead of raw UC privileges. See
   [§5.1](#51-access-profiles-grant-aliases).
 - **Isolated securables** via `isolation_mode` + `databricks_workspace_binding`.
 - **AWS** storage credentials (IAM role, self-assuming UC role pattern).
@@ -267,20 +268,28 @@ Instead of repeating raw UC privileges in every grant, a grant can reference a n
 **access profile**. This keeps the YAML readable and stops privilege sets being
 copy-pasted without understanding what they contain.
 
+The two shipped profiles — **`DATA_READER`** and **`DATA_EDITOR`** — mirror the
+Databricks Catalog Explorer "Privilege presets" of the same names. Those UI presets are
+a convenience that ticks a bundle of individual privileges; there is no grantable
+"preset" object, so Terraform lists the raw privileges. These profiles reproduce the
+bundle in version-controlled form (`DATA_READER` = read-only, `DATA_EDITOR` = read +
+modify).
+
 **The registry — `access_profiles.tf`** (root, committed, governed vocabulary). Each
 profile is **securable-type-aware**: it maps a securable type to the privileges that
-mean "read"/"write"/etc. *for that type* (read on a catalog ≠ read on a volume):
+apply *for that type* (read on a catalog ≠ read on a volume). The catalog/schema sets
+match the documented presets exactly:
 
 ```hcl
 locals {
   access_profiles = {
-    READ_ACCESS = {
-      catalog           = ["USE_CATALOG", "USE_SCHEMA", "SELECT"]
-      schema            = ["USE_SCHEMA", "SELECT"]
+    DATA_READER = {   # read-only
+      catalog           = ["USE_CATALOG", "USE_SCHEMA", "EXECUTE", "READ_VOLUME", "SELECT"]
+      schema            = ["USE_SCHEMA", "EXECUTE", "READ_VOLUME", "SELECT"]
       volume            = ["READ_VOLUME"]
       external_location = ["READ_FILES"]
     }
-    WRITE_ACCESS = { ... }
+    DATA_EDITOR = { ... }   # read + modify (DATA_READER + APPLY_TAG, MODIFY, REFRESH, WRITE_VOLUME)
   }
 }
 ```
@@ -292,9 +301,9 @@ aliases) or `privileges` (raw) — not both, not neither:
 catalog/finance:
   grants:
     - principal: data_engineers
-      access: [WRITE_ACCESS]          # preferred: resolved to WRITE_ACCESS.catalog
+      access: [DATA_EDITOR]           # preferred: resolved to DATA_EDITOR.catalog
     - principal: analysts
-      access: [READ_ACCESS]
+      access: [DATA_READER]
   import_id: catalog/finance
 
 metastore/<metastore_id>:
@@ -305,7 +314,7 @@ metastore/<metastore_id>:
 ```
 
 - `access` resolves to the union of each profile's privileges **for that securable's
-  type**; multiple profiles are allowed (`access: [READ_ACCESS, SHARE_ACCESS]`).
+  type**; multiple profiles are allowed (`access: [DATA_READER, SHARE_ACCESS]`).
 - **`privileges` (raw) is the escape hatch** for existing grants that don't match a
   profile — use it to reach a clean import no-op, then migrate to `access` where it
   fits. Remember grants are authoritative, so the resolved set must equal the live set.

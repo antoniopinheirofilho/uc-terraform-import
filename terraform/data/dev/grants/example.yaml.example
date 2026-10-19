@@ -5,17 +5,18 @@
 # plan will show a change (and apply would revoke). Each grant sets EITHER:
 #   - access:     one or more access-profile aliases (see ../../../access_profiles.tf),
 #                 resolved to privileges for this securable type. PREFERRED going forward.
+#                 DATA_READER / DATA_EDITOR mirror the Catalog Explorer "Privilege presets".
 #   - privileges: raw UC privileges. The escape hatch for existing grants that don't fit
 #                 a profile. Use when importing, then migrate to `access` where possible.
 # Exactly one of access / privileges per grant — not both.
 
-# Profile-based (preferred) — readable, governed:
+# Profile-based (preferred) — mirrors the UI Data Reader / Data Editor presets:
 catalog/my_catalog:
   grants:
     - principal: data_engineers
-      access: [WRITE_ACCESS]
+      access: [DATA_EDITOR]
     - principal: analysts
-      access: [READ_ACCESS]
+      access: [DATA_READER]
   import_id: catalog/my_catalog
 
 # Raw privileges (escape hatch) — e.g. a metastore grant that fits no profile:

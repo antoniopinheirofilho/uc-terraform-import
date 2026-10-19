@@ -101,7 +101,7 @@ variable "grants" {
   type = map(object({
     grants = list(object({
       principal  = string
-      access     = optional(list(string)) # profile aliases, e.g. ["READ_ACCESS"]
+      access     = optional(list(string)) # profile aliases, e.g. ["DATA_READER"]
       privileges = optional(list(string)) # raw UC privileges, e.g. ["USE_CATALOG"]
     }))
     import_id = optional(string) # = the key, "<securable_type>/<full_name>"
