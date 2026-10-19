@@ -41,10 +41,10 @@ Plan: N to import, 0 to add, 0 to change, 0 to destroy.
   the root and passed through a typed module whose `variable` type constraints validate
   it (missing/mistyped/unknown fields fail the plan). Scales to many files/objects.
 - **Authoritative grants** per securable (`databricks_grants`), with `owner` captured.
-- **Access profiles** — named, securable-type-aware privilege bundles (`DATA_READER` /
+- **Privilege presets** — named, securable-type-aware privilege bundles (`DATA_READER` /
   `DATA_EDITOR`, mirroring the Catalog Explorer "Privilege presets") so grant YAML
-  references a profile instead of raw UC privileges. See
-  [§5.1](#51-access-profiles-grant-aliases).
+  references a preset instead of raw UC privileges. See
+  [§5.1](#51-privilege-presets-grant-aliases).
 - **Isolated securables** via `isolation_mode` + `databricks_workspace_binding`.
 - **AWS** storage credentials (IAM role, self-assuming UC role pattern).
 - **`prevent_destroy` guard** on every resource — a destroy/replace fails the plan loud.
@@ -130,7 +130,7 @@ terraform/
 ├── providers.tf                               # root: one provider alias per environment (dev/sit/stg/prod)
 ├── main.tf                                     # root: one modules/uc instance per environment
 ├── imports.tf                                  # root: import blocks per environment (import_id gate)
-├── access_profiles.tf                          # root: named privilege bundles for grants (governance vocabulary)
+├── privilege_presets.tf                        # root: named privilege bundles for grants (governance vocabulary)
 ├── data.tf                                    # root: reads data/<env>/<type>/*.yaml; builds inventory + import maps
 ├── provider.auto.tfvars.example               # workspace_connections template (dev/sit/stg/prod)
 ├── data/                                      # THE INVENTORY (YAML), gitignored; *.yaml.example committed
@@ -262,27 +262,26 @@ corrections (each is needed for a clean no-op plan):
 The typed module validates every entry; the import blocks in `imports.tf` use each
 entry's `import_id` verbatim.
 
-### 5.1 Access profiles (grant aliases)
+### 5.1 Privilege presets (grant aliases)
 
 Instead of repeating raw UC privileges in every grant, a grant can reference a named
-**access profile**. This keeps the YAML readable and stops privilege sets being
+**privilege preset**. This keeps the YAML readable and stops privilege sets being
 copy-pasted without understanding what they contain.
 
-The two shipped profiles — **`DATA_READER`** and **`DATA_EDITOR`** — mirror the
+The two shipped presets — **`DATA_READER`** and **`DATA_EDITOR`** — mirror the
 Databricks Catalog Explorer "Privilege presets" of the same names. Those UI presets are
 a convenience that ticks a bundle of individual privileges; there is no grantable
-"preset" object, so Terraform lists the raw privileges. These profiles reproduce the
-bundle in version-controlled form (`DATA_READER` = read-only, `DATA_EDITOR` = read +
-modify).
+"preset" object, so Terraform lists the raw privileges. These reproduce the bundle in
+version-controlled form (`DATA_READER` = read-only, `DATA_EDITOR` = read + modify).
 
-**The registry — `access_profiles.tf`** (root, committed, governed vocabulary). Each
-profile is **securable-type-aware**: it maps a securable type to the privileges that
+**The registry — `privilege_presets.tf`** (root, committed, governed vocabulary). Each
+preset is **securable-type-aware**: it maps a securable type to the privileges that
 apply *for that type* (read on a catalog ≠ read on a volume). The catalog/schema sets
 match the documented presets exactly:
 
 ```hcl
 locals {
-  access_profiles = {
+  privilege_presets = {
     DATA_READER = {   # read-only
       catalog           = ["USE_CATALOG", "USE_SCHEMA", "EXECUTE", "READ_VOLUME", "SELECT"]
       schema            = ["USE_SCHEMA", "EXECUTE", "READ_VOLUME", "SELECT"]
@@ -294,36 +293,36 @@ locals {
 }
 ```
 
-**Using it in grant YAML.** Each grant sets **exactly one** of `access` (profile
-aliases) or `privileges` (raw) — not both, not neither:
+**Using it in grant YAML.** Each grant sets **exactly one** of `presets` (preset names)
+or `privileges` (raw) — not both, not neither:
 
 ```yaml
 catalog/finance:
   grants:
     - principal: data_engineers
-      access: [DATA_EDITOR]           # preferred: resolved to DATA_EDITOR.catalog
+      presets: [DATA_EDITOR]          # preferred: resolved to DATA_EDITOR.catalog
     - principal: analysts
-      access: [DATA_READER]
+      presets: [DATA_READER]
   import_id: catalog/finance
 
 metastore/<metastore_id>:
   grants:
     - principal: account users
-      privileges: [USE_MARKETPLACE_ASSETS]   # raw escape hatch — fits no profile
+      privileges: [USE_MARKETPLACE_ASSETS]   # raw escape hatch — fits no preset
   import_id: metastore/<metastore_id>
 ```
 
-- `access` resolves to the union of each profile's privileges **for that securable's
-  type**; multiple profiles are allowed (`access: [DATA_READER, SHARE_ACCESS]`).
+- `presets` resolves to the union of each preset's privileges **for that securable's
+  type**; multiple presets are allowed (`presets: [DATA_READER, SHARE_ACCESS]`).
 - **`privileges` (raw) is the escape hatch** for existing grants that don't match a
-  profile — use it to reach a clean import no-op, then migrate to `access` where it
+  preset — use it to reach a clean import no-op, then migrate to `presets` where it
   fits. Remember grants are authoritative, so the resolved set must equal the live set.
-- **Fail-loud validation:** an undefined profile, a profile with no entry for the
+- **Fail-loud validation:** an undefined preset, a preset with no entry for the
   securable's type, or an empty set **fails the plan** (resource precondition) — a typo
-  never silently grants nothing. Setting both `access` and `privileges` fails variable
+  never silently grants nothing. Setting both `presets` and `privileges` fails variable
   validation.
 
-To add a capability, edit `access_profiles.tf` (one reviewed change) rather than every
+To add a capability, edit `privilege_presets.tf` (one reviewed change) rather than every
 grant entry.
 
 ---

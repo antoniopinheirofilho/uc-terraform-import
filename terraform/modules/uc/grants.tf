@@ -28,11 +28,11 @@ resource "databricks_grants" "this" {
     prevent_destroy = true
 
     # Fail loud if any grant resolved to no privileges — a raw list was empty, or an
-    # `access` alias is undefined / not defined for this securable type (see
-    # access_profiles.tf). This stops a typo'd profile from silently granting nothing.
+    # `presets` name is undefined / not defined for this securable type (see
+    # privilege_presets.tf). This stops a typo'd preset from silently granting nothing.
     precondition {
       condition     = alltrue([for g in each.value.grants : length(g.privileges) > 0])
-      error_message = "Grant on '${each.key}' resolved to no privileges: an `access` profile is undefined or has no entry for securable type '${each.value.securable_type}', or a raw `privileges` list is empty. Check the grant YAML and access_profiles.tf."
+      error_message = "Grant on '${each.key}' resolved to no privileges: a `presets` name is undefined or has no entry for securable type '${each.value.securable_type}', or a raw `privileges` list is empty. Check the grant YAML and privilege_presets.tf."
     }
   }
 

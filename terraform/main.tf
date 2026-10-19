@@ -7,7 +7,7 @@ module "uc_dev" {
   source    = "./modules/uc"
   providers = { databricks = databricks.dev }
 
-  access_profiles     = local.access_profiles
+  privilege_presets   = local.privilege_presets
   catalogs            = try(local.inventory["dev"].catalogs, {})
   schemas             = try(local.inventory["dev"].schemas, {})
   volumes             = try(local.inventory["dev"].volumes, {})
@@ -22,7 +22,7 @@ module "uc_sit" {
   source    = "./modules/uc"
   providers = { databricks = databricks.sit }
 
-  access_profiles     = local.access_profiles
+  privilege_presets   = local.privilege_presets
   catalogs            = try(local.inventory["sit"].catalogs, {})
   schemas             = try(local.inventory["sit"].schemas, {})
   volumes             = try(local.inventory["sit"].volumes, {})
@@ -37,7 +37,7 @@ module "uc_stg" {
   source    = "./modules/uc"
   providers = { databricks = databricks.stg }
 
-  access_profiles     = local.access_profiles
+  privilege_presets   = local.privilege_presets
   catalogs            = try(local.inventory["stg"].catalogs, {})
   schemas             = try(local.inventory["stg"].schemas, {})
   volumes             = try(local.inventory["stg"].volumes, {})
@@ -52,7 +52,7 @@ module "uc_prod" {
   source    = "./modules/uc"
   providers = { databricks = databricks.prod }
 
-  access_profiles     = local.access_profiles
+  privilege_presets   = local.privilege_presets
   catalogs            = try(local.inventory["prod"].catalogs, {})
   schemas             = try(local.inventory["prod"].schemas, {})
   volumes             = try(local.inventory["prod"].volumes, {})

@@ -87,21 +87,21 @@ variable "workspace_bindings" {
 }
 
 # key = "<securable_type>/<full_name>"
-# Access profiles registry (profile => securable_type => [privileges]); passed in from
-# the root (access_profiles.tf). Resolves `access` aliases on grants below.
-variable "access_profiles" {
+# Privilege presets registry (preset => securable_type => [privileges]); passed in from
+# the root (privilege_presets.tf). Resolves `presets` aliases on grants below.
+variable "privilege_presets" {
   type    = map(map(list(string)))
   default = {}
 }
 
-# Each grant sets EITHER `access` (profile aliases, resolved per securable type) OR
+# Each grant sets EITHER `presets` (preset names, resolved per securable type) OR
 # `privileges` (raw UC privileges) — not both, not neither. Raw is the escape hatch for
-# importing existing grants that don't fit a profile; prefer `access` going forward.
+# importing existing grants that don't fit a preset; prefer `presets` going forward.
 variable "grants" {
   type = map(object({
     grants = list(object({
       principal  = string
-      access     = optional(list(string)) # profile aliases, e.g. ["DATA_READER"]
+      presets    = optional(list(string)) # preset names, e.g. ["DATA_READER"]
       privileges = optional(list(string)) # raw UC privileges, e.g. ["USE_CATALOG"]
     }))
     import_id = optional(string) # = the key, "<securable_type>/<full_name>"
@@ -111,9 +111,9 @@ variable "grants" {
   validation {
     condition = alltrue(flatten([
       for e in values(var.grants) : [
-        for g in e.grants : (g.access != null) != (g.privileges != null)
+        for g in e.grants : (g.presets != null) != (g.privileges != null)
       ]
     ]))
-    error_message = "Each grant must set exactly one of `access` (profile aliases) or `privileges` (raw UC privileges) — not both, not neither."
+    error_message = "Each grant must set exactly one of `presets` (privilege preset names) or `privileges` (raw UC privileges) — not both, not neither."
   }
 }
